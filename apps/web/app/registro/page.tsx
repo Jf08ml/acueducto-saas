@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { nitCheckDigit, registerOrganizationSchema } from '@agua-mata/shared';
 import { api, setToken } from '@/lib/api';
+import { usePlatformOnly } from '@/lib/host';
 
 const ORG_TYPES = [
   ['asociacion_usuarios', 'Asociación de usuarios'],
@@ -14,9 +15,10 @@ const ORG_TYPES = [
   ['otro', 'Otro'],
 ] as const;
 
-/** Paso 1 del asistente de onboarding. Los pasos de tarifas, branding e importación Excel vendrán después. */
+/** Registro de un acueducto nuevo. Luego continúa en /configuracion. */
 export default function RegistroPage() {
   const router = useRouter();
+  const platformOk = usePlatformOnly();
   const [f, setF] = useState({
     name: '', legalName: '', nit: '', department: '', municipality: '', organizationType: 'asociacion_usuarios',
     estimatedSubscribers: '', contactEmail: '', contactPhone: '', ownerName: '', ownerEmail: '', ownerPassword: '',
@@ -48,36 +50,38 @@ export default function RegistroPage() {
     }
   }
 
+  if (!platformOk) return null;
+
   return (
-    <main className="container">
-      <form className="card stack" onSubmit={submit} style={{ maxWidth: 720, margin: '0 auto' }}>
+    <main className="content" style={{ margin: '0 auto', maxWidth: 820 }}>
+      <form className="card stack" onSubmit={submit}>
         <h1 style={{ margin: 0 }}>Registra tu acueducto</h1>
         <p className="muted" style={{ margin: 0 }}>30 días de prueba del plan Profesional, sin tarjeta.</p>
-        <h3>Datos de la organización</h3>
+        <h3 style={{ marginTop: 8 }}>Datos de la organización</h3>
         <div className="grid2">
-          <label>Nombre del acueducto<input value={f.name} onChange={set('name')} required /></label>
-          <label>Razón social<input value={f.legalName} onChange={set('legalName')} required /></label>
-          <label>NIT (sin DV)<input value={f.nit} onChange={set('nit')} inputMode="numeric" required /></label>
-          <label>Dígito de verificación<input value={dv} readOnly placeholder="Se calcula solo" /></label>
-          <label>Departamento<input value={f.department} onChange={set('department')} required /></label>
-          <label>Municipio<input value={f.municipality} onChange={set('municipality')} required /></label>
-          <label>Tipo de organización
+          <label className="field">Nombre del acueducto<input value={f.name} onChange={set('name')} required /></label>
+          <label className="field">Razón social<input value={f.legalName} onChange={set('legalName')} required /></label>
+          <label className="field">NIT (sin DV)<input value={f.nit} onChange={set('nit')} inputMode="numeric" required /></label>
+          <label className="field">Dígito de verificación<input value={dv} readOnly placeholder="Se calcula solo" /></label>
+          <label className="field">Departamento<input value={f.department} onChange={set('department')} required /></label>
+          <label className="field">Municipio<input value={f.municipality} onChange={set('municipality')} required /></label>
+          <label className="field">Tipo de organización
             <select value={f.organizationType} onChange={set('organizationType')}>
               {ORG_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
-          <label>Suscriptores aproximados<input value={f.estimatedSubscribers} onChange={set('estimatedSubscribers')} inputMode="numeric" /></label>
-          <label>Correo de contacto<input type="email" value={f.contactEmail} onChange={set('contactEmail')} required /></label>
-          <label>Teléfono<input value={f.contactPhone} onChange={set('contactPhone')} required /></label>
+          <label className="field">Suscriptores aproximados<input value={f.estimatedSubscribers} onChange={set('estimatedSubscribers')} inputMode="numeric" /></label>
+          <label className="field">Correo de contacto<input type="email" value={f.contactEmail} onChange={set('contactEmail')} required /></label>
+          <label className="field">Teléfono<input value={f.contactPhone} onChange={set('contactPhone')} required /></label>
         </div>
-        <h3>Administrador principal</h3>
+        <h3 style={{ marginTop: 8 }}>Administrador principal</h3>
         <div className="grid2">
-          <label>Nombre completo<input value={f.ownerName} onChange={set('ownerName')} required /></label>
-          <label>Correo<input type="email" value={f.ownerEmail} onChange={set('ownerEmail')} required /></label>
-          <label>Contraseña (mín. 8)<input type="password" value={f.ownerPassword} onChange={set('ownerPassword')} required /></label>
+          <label className="field">Nombre completo<input value={f.ownerName} onChange={set('ownerName')} required /></label>
+          <label className="field">Correo<input type="email" value={f.ownerEmail} onChange={set('ownerEmail')} required /></label>
+          <label className="field">Contraseña (mín. 8)<input type="password" value={f.ownerPassword} onChange={set('ownerPassword')} required /></label>
         </div>
-        {error && <p className="error">{error}</p>}
-        <button type="submit">Crear cuenta</button>
+        {error && <div className="alert alert-danger">{error}</div>}
+        <button className="btn" type="submit">Crear cuenta y continuar</button>
       </form>
     </main>
   );

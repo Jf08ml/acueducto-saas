@@ -6,11 +6,14 @@ import {
   AREA_TYPES, LEGAL_NATURES, MAX_SUBSIDY_PCT, PROVIDER_TYPES, suggestedBasicConsumptionM3, tariffSchema,
 } from '@agua-mata/shared';
 import { api, API_URL, apiDownload, apiUpload } from '@/lib/api';
+import { useMe } from '@/components/app-shell';
+import { PageHeader } from '@/components/ui';
 
 const STEPS = [
   ['profile', 'Perfil regulatorio'],
   ['tariff', 'Tarifa'],
   ['branding', 'Marca'],
+  ['domain', 'Dominio'],
   ['subscribers', 'Suscriptores'],
   ['compliance', 'Obligaciones'],
 ] as const;
@@ -26,9 +29,20 @@ function errMsg(e: any): string {
 
 export default function ConfiguracionPage() {
   const router = useRouter();
+  const { me, reload: reloadMe } = useMe();
   const [state, setState] = useState<any>(null);
-  const [step, setStep] = useState<Step>('profile');
+  const [step, setStepState] = useState<Step>('profile');
   const [error, setError] = useState('');
+
+  // Paso inicial desde ?paso=… (sin useSearchParams para no exigir Suspense en build estático).
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get('paso');
+    if (p && STEPS.some(([k]) => k === p)) setStepState(p as Step);
+  }, []);
+  const setStep = (s: Step) => {
+    setStepState(s);
+    window.history.replaceState(null, '', `?paso=${s}`);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -44,46 +58,148 @@ export default function ConfiguracionPage() {
     setError('');
     try {
       await api('/setup/complete', { method: 'POST' });
+      await reloadMe();
       router.push('/panel');
     } catch (e: any) {
       setError(errMsg(e));
     }
   }
 
-  if (!state) return <main className="container"><p className="muted">Cargando…</p>{error && <p className="error">{error}</p>}</main>;
+  if (!state) return <>{error ? <p className="alert alert-danger">{error}</p> : <p className="muted">Cargando…</p>}</>;
+  const completed = Boolean(state.organization.onboardingCompletedAt);
 
   return (
-    <main className="container stack">
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ margin: 0 }}>Configuración inicial</h1>
-          <p className="muted" style={{ margin: 0 }}>{state.organization.name}</p>
-        </div>
-        <a href="/panel">Ir al panel</a>
-      </div>
+    <div className="stack">
+      <PageHeader
+        title={completed ? 'Configuración' : 'Configuración inicial'}
+        description={completed ? 'Ajusta el perfil, la tarifa, la marca y el dominio de tu acueducto.' : 'Completa estos pasos para empezar. Solo el perfil regulatorio y la tarifa son obligatorios.'}
+      />
 
-      <nav className="row" aria-label="Pasos">
+      <div className="tabs" role="tablist" aria-label="Pasos">
         {STEPS.map(([key, label], i) => (
-          <button key={key} className={step === key ? '' : 'secondary'} onClick={() => setStep(key)}>
-            {i + 1}. {label} {key !== 'compliance' && state.steps[key] ? '✓' : ''}
+          <button key={key} role="tab" className="tab" aria-selected={step === key} onClick={() => setStep(key)}>
+            {i + 1}. {label}
+            {key in state.steps && state.steps[key] && <span className="check" aria-label="completo">✓</span>}
           </button>
         ))}
-      </nav>
+      </div>
 
       {step === 'profile' && <ProfileStep state={state} onSaved={() => { load(); setStep('tariff'); }} />}
       {step === 'tariff' && <TariffStep state={state} onSaved={() => { load(); setStep('branding'); }} />}
-      {step === 'branding' && <BrandingStep state={state} onSaved={load} />}
+      {step === 'branding' && <BrandingStep state={state} onSaved={() => { load(); reloadMe(); }} />}
+      {step === 'domain' && <DomainStep enabled={me.entitlements.features.custom_domain === true} />}
       {step === 'subscribers' && <ImportStep onImported={load} />}
       {step === 'compliance' && <ComplianceStep />}
 
-      <section className="card row" style={{ justifyContent: 'space-between' }}>
-        <span className="muted">
-          {state.canComplete ? 'Ya puedes empezar a usar AguaMata. Los demás pasos los puedes completar después.' : 'Para empezar necesitas al menos el perfil regulatorio y la tarifa.'}
-        </span>
-        <button onClick={complete} disabled={!state.canComplete}>Finalizar configuración</button>
+      {!completed && (
+        <section className="card row-between">
+          <span className="muted">
+            {state.canComplete ? 'Ya puedes empezar a usar AguaMata. Los demás pasos los puedes completar después.' : 'Para empezar necesitas al menos el perfil regulatorio y la tarifa.'}
+          </span>
+          <button className="btn" onClick={complete} disabled={!state.canComplete}>Finalizar configuración</button>
+        </section>
+      )}
+      {error && <p className="alert alert-danger">{error}</p>}
+    </div>
+  );
+}
+
+function DomainStep({ enabled }: { enabled: boolean }) {
+  const [data, setData] = useState<any>(null);
+  const [hostname, setHostname] = useState('');
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const [busy, setBusy] = useState('');
+
+  const load = useCallback(() => api('/domains').then(setData).catch((e) => setMsg({ kind: 'danger', text: errMsg(e) })), []);
+  useEffect(() => { load(); }, [load]);
+
+  async function act(id: string, action: () => Promise<any>, ok?: (r: any) => string) {
+    setBusy(id);
+    setMsg(null);
+    try {
+      const r = await action();
+      if (ok) setMsg({ kind: r?.status === 'verified' || !r?.lastError ? 'ok' : 'warn', text: ok(r) });
+      await load();
+    } catch (e) {
+      setMsg({ kind: 'danger', text: errMsg(e) });
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    await act('add', () => api('/domains', { method: 'POST', body: JSON.stringify({ hostname }) }), () => 'Dominio agregado. Ahora crea los registros DNS y verifica.');
+    setHostname('');
+  }
+
+  if (!data) return <p className="muted">Cargando…</p>;
+
+  return (
+    <div className="stack">
+      <section className="card stack">
+        <h2>Dirección de tu acueducto</h2>
+        <p className="muted">Tu acueducto siempre está disponible en el subdominio de la plataforma. Compártelo con tu personal.</p>
+        <div className="row">
+          <code>{data.defaultUrl}</code>
+          <a className="btn btn-secondary btn-sm" href={data.defaultUrl} target="_blank" rel="noreferrer">Abrir</a>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(data.defaultUrl)}>Copiar</button>
+        </div>
+        {data.primaryUrl !== data.defaultUrl && <p className="small">Dirección principal: <code>{data.primaryUrl}</code></p>}
       </section>
-      {error && <p className="error">{error}</p>}
-    </main>
+
+      <section className="card stack">
+        <h2>Dominio propio</h2>
+        <p className="muted">
+          Usa tu propio dominio, por ejemplo <code>portal.miacueducto.org</code>. Crea los dos registros DNS que te indicamos en tu proveedor de dominio
+          y luego pulsa <strong>Verificar</strong>. Los cambios de DNS pueden tardar hasta unas horas.
+        </p>
+        {!enabled ? (
+          <div className="alert alert-info">Los dominios propios están disponibles desde el plan Profesional.</div>
+        ) : (
+          <form className="row" onSubmit={add}>
+            <input placeholder="portal.miacueducto.org" value={hostname} onChange={(e) => setHostname(e.target.value)} style={{ maxWidth: 340 }} required />
+            <button className="btn" type="submit" disabled={busy === 'add'}>Agregar dominio</button>
+          </form>
+        )}
+        {msg && <div className={`alert alert-${msg.kind}`}>{msg.text}</div>}
+
+        {data.custom.map((d: any) => (
+          <div key={d.id} className="card stack" style={{ background: 'var(--surface-2)' }}>
+            <div className="row-between">
+              <div className="row">
+                <strong>{d.hostname}</strong>
+                <span className={`badge ${d.status === 'verified' ? 'badge-ok' : d.status === 'failed' ? 'badge-danger' : 'badge-warn'}`}>
+                  {d.status === 'verified' ? 'Verificado' : d.status === 'failed' ? 'No verificado' : 'Pendiente'}
+                </span>
+                {d.isPrimary && <span className="badge badge-info">Principal</span>}
+              </div>
+              <div className="row" style={{ gap: 6 }}>
+                <button className="btn btn-secondary btn-sm" disabled={busy === d.id}
+                  onClick={() => act(d.id, () => api(`/domains/${d.id}/verify`, { method: 'POST' }), (r) => (r.status === 'verified' ? '¡Dominio verificado!' : r.lastError))}>
+                  Verificar
+                </button>
+                {d.status === 'verified' && !d.isPrimary && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => act(d.id, () => api(`/domains/${d.id}/primary`, { method: 'POST' }))}>Hacer principal</button>
+                )}
+                <button className="btn btn-ghost btn-sm" onClick={() => confirm(`¿Quitar ${d.hostname}?`) && act(d.id, () => api(`/domains/${d.id}`, { method: 'DELETE' }))}>Quitar</button>
+              </div>
+            </div>
+            {d.lastError && d.status !== 'verified' && <p className="small" style={{ color: 'var(--danger)' }}>{d.lastError}</p>}
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Tipo</th><th>Nombre</th><th>Valor</th><th>Para qué</th></tr></thead>
+                <tbody>
+                  {d.dns.map((r: any) => (
+                    <tr key={r.type}><td><span className="badge">{r.type}</span></td><td><code>{r.name}</code></td><td><code>{r.value}</code></td><td className="small muted">{r.purpose}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </section>
+    </div>
   );
 }
 
@@ -119,20 +235,20 @@ function ProfileStep({ state, onSaved }: { state: any; onSaved: () => void }) {
       <h2 style={{ margin: 0 }}>Perfil jurídico y regulatorio</h2>
       <p className="muted" style={{ margin: 0 }}>Con esto identificamos las obligaciones y la metodología tarifaria que te aplican.</p>
       <div className="grid2">
-        <label>Naturaleza jurídica
+        <label className="field">Naturaleza jurídica
           <select value={f.legalNature} onChange={set('legalNature')}>{LEGAL_NATURES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </label>
-        <label>Tipo de prestador
+        <label className="field">Tipo de prestador
           <select value={f.providerType} onChange={set('providerType')}>{PROVIDER_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </label>
-        <label>Zona que atiende
+        <label className="field">Zona que atiende
           <select value={f.areaType} onChange={set('areaType')}>{AREA_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </label>
-        <label>Altitud promedio (m s. n. m.)<input value={f.altitudeMasl} onChange={set('altitudeMasl')} inputMode="numeric" required /></label>
-        <label>Número de suscriptores<input value={f.estimatedSubscribers} onChange={set('estimatedSubscribers')} inputMode="numeric" required /></label>
+        <label className="field">Altitud promedio (m s. n. m.)<input value={f.altitudeMasl} onChange={set('altitudeMasl')} inputMode="numeric" required /></label>
+        <label className="field">Número de suscriptores<input value={f.estimatedSubscribers} onChange={set('estimatedSubscribers')} inputMode="numeric" required /></label>
       </div>
-      {msg && <p className="muted">{msg}</p>}
-      <button type="submit">Guardar y continuar</button>
+      {msg && <p className="alert alert-info">{msg}</p>}
+      <button className="btn" type="submit">Guardar y continuar</button>
     </form>
   );
 }
@@ -183,19 +299,19 @@ function TariffStep({ state, onSaved }: { state: any; onSaved: () => void }) {
         Valores en pesos según tu estudio de costos. Guardar una tarifa nueva conserva la anterior como historial.
       </p>
       <div className="grid2">
-        <label>Nombre<input value={f.name} onChange={set('name')} required /></label>
-        <label>Vigente desde<input type="date" value={f.effectiveFrom} onChange={set('effectiveFrom')} required /></label>
-        <label>Período de facturación
+        <label className="field">Nombre<input value={f.name} onChange={set('name')} required /></label>
+        <label className="field">Vigente desde<input type="date" value={f.effectiveFrom} onChange={set('effectiveFrom')} required /></label>
+        <label className="field">Período de facturación
           <select value={f.billingPeriod} onChange={set('billingPeriod')}>
             <option value="monthly">Mensual</option>
             <option value="bimonthly">Bimestral</option>
           </select>
         </label>
-        <label>Consumo básico (m³) · sugerido {suggested}<input value={f.basicConsumptionM3} onChange={set('basicConsumptionM3')} inputMode="numeric" required /></label>
-        <label>Cargo fijo ($)<input value={f.fixedCharge} onChange={set('fixedCharge')} inputMode="decimal" required /></label>
-        <label>Consumo básico ($/m³)<input value={f.rateBasic} onChange={set('rateBasic')} inputMode="decimal" required /></label>
-        <label>Consumo complementario ($/m³)<input value={f.rateComplementary} onChange={set('rateComplementary')} inputMode="decimal" required /></label>
-        <label>Consumo suntuario ($/m³)<input value={f.rateSumptuary} onChange={set('rateSumptuary')} inputMode="decimal" required /></label>
+        <label className="field">Consumo básico (m³) · sugerido {suggested}<input value={f.basicConsumptionM3} onChange={set('basicConsumptionM3')} inputMode="numeric" required /></label>
+        <label className="field">Cargo fijo ($)<input value={f.fixedCharge} onChange={set('fixedCharge')} inputMode="decimal" required /></label>
+        <label className="field">Consumo básico ($/m³)<input value={f.rateBasic} onChange={set('rateBasic')} inputMode="decimal" required /></label>
+        <label className="field">Consumo complementario ($/m³)<input value={f.rateComplementary} onChange={set('rateComplementary')} inputMode="decimal" required /></label>
+        <label className="field">Consumo suntuario ($/m³)<input value={f.rateSumptuary} onChange={set('rateSumptuary')} inputMode="decimal" required /></label>
       </div>
       <h3 style={{ marginBottom: 0 }}>Subsidios y contribuciones (%)</h3>
       <p className="muted" style={{ margin: 0 }}>
@@ -209,8 +325,8 @@ function TariffStep({ state, onSaved }: { state: any; onSaved: () => void }) {
           </label>
         ))}
       </div>
-      {msg && <p className="error">{msg}</p>}
-      <button type="submit">Guardar tarifa</button>
+      {msg && <p className="alert alert-danger">{msg}</p>}
+      <button className="btn" type="submit">Guardar tarifa</button>
     </form>
   );
 }
@@ -251,11 +367,11 @@ function BrandingStep({ state, onSaved }: { state: any; onSaved: () => void }) {
       <h2 style={{ margin: 0 }}>Marca del acueducto</h2>
       <p className="muted" style={{ margin: 0 }}>Se usa en el panel y en los recibos. No afecta a ninguna otra organización.</p>
       <div className="grid2">
-        <label>Color principal<input type="color" value={f.primaryColor} onChange={(e) => setF({ ...f, primaryColor: e.target.value })} /></label>
-        <label>Color secundario<input type="color" value={f.secondaryColor} onChange={(e) => setF({ ...f, secondaryColor: e.target.value })} /></label>
+        <label className="field">Color principal<input type="color" value={f.primaryColor} onChange={(e) => setF({ ...f, primaryColor: e.target.value })} /></label>
+        <label className="field">Color secundario<input type="color" value={f.secondaryColor} onChange={(e) => setF({ ...f, secondaryColor: e.target.value })} /></label>
       </div>
-      <label>Texto al pie del recibo<input value={f.receiptFooter} onChange={(e) => setF({ ...f, receiptFooter: e.target.value })} maxLength={300} /></label>
-      <label>Logo (PNG, JPG o WEBP, máx. 1 MB)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} /></label>
+      <label className="field">Texto al pie del recibo<input value={f.receiptFooter} onChange={(e) => setF({ ...f, receiptFooter: e.target.value })} maxLength={300} /></label>
+      <label className="field">Logo (PNG, JPG o WEBP, máx. 1 MB)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} /></label>
       {(b.hasLogo || logoV > 0) && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={`${API_URL}/public/orgs/${state.organization.id}/logo?v=${logoV}`} alt="Logo del acueducto" style={{ maxHeight: 80, alignSelf: 'start' }} />
@@ -264,8 +380,8 @@ function BrandingStep({ state, onSaved }: { state: any; onSaved: () => void }) {
         <strong>{state.organization.name}</strong>
         <span style={{ background: f.secondaryColor, color: '#13232f', padding: '2px 8px', borderRadius: 999 }}>Vista previa</span>
       </div>
-      {msg && <p className="muted">{msg}</p>}
-      <button type="submit">Guardar marca</button>
+      {msg && <p className="alert alert-info">{msg}</p>}
+      <button className="btn" type="submit">Guardar marca</button>
     </form>
   );
 }
@@ -299,13 +415,13 @@ function ImportStep({ onImported }: { onImported: () => void }) {
         Si hay un solo error no se importa nada, para que no queden datos a medias.
       </p>
       <div className="row">
-        <button type="button" className="secondary" onClick={() => apiDownload('/imports/subscribers/template', 'plantilla-suscriptores.xlsx').catch((e) => setMsg(errMsg(e)))}>
+        <button type="button" className="btn btn-secondary" onClick={() => apiDownload('/imports/subscribers/template', 'plantilla-suscriptores.xlsx').catch((e) => setMsg(errMsg(e)))}>
           Descargar plantilla
         </button>
         <input type="file" accept=".xlsx" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }} />
-        <button type="button" onClick={() => send(true)} disabled={!file || busy}>Revisar archivo</button>
+        <button className="btn" type="button" onClick={() => send(true)} disabled={!file || busy}>Revisar archivo</button>
       </div>
-      {msg && <p className="error">{msg}</p>}
+      {msg && <p className="alert alert-danger">{msg}</p>}
       {result && (
         <div className="stack">
           <p style={{ margin: 0 }}>
@@ -326,7 +442,7 @@ function ImportStep({ onImported }: { onImported: () => void }) {
             </div>
           )}
           {result.dryRun && result.issueCount === 0 && result.validRows > 0 && (
-            <button type="button" onClick={() => send(false)} disabled={busy}>Importar {result.validRows} suscriptores</button>
+            <button className="btn" type="button" onClick={() => send(false)} disabled={busy}>Importar {result.validRows} suscriptores</button>
           )}
         </div>
       )}
@@ -376,7 +492,7 @@ function ComplianceStep() {
           </tbody>
         </table>
       </div>
-      {msg && <p className="error">{msg}</p>}
+      {msg && <p className="alert alert-danger">{msg}</p>}
     </section>
   );
 }

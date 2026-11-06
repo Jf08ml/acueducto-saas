@@ -14,6 +14,7 @@ export const FEATURES = [
   'automations',
   'integrations',
   'excel_import',
+  'custom_domain',
 ] as const;
 export type FeatureKey = (typeof FEATURES)[number];
 

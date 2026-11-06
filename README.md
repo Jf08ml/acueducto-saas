@@ -65,6 +65,30 @@ Después de registrarse, el acueducto completa estos pasos. Los dos primeros son
 3. **Marca:** colores, pie de recibo y logo (PNG, JPG o WEBP; se revisa el tipo real del archivo, no solo la extensión).
 4. **Importación desde Excel:** plantilla descargable, revisión previa con reporte por fila e importación todo o nada que respeta el límite del plan.
 
+### Dominios por acueducto
+
+- **Por defecto**, cada acueducto vive en `{slug}.{dominio de la plataforma}` (en desarrollo: `http://{slug}.localhost:3000`).
+  El slug sale del nombre al registrarse y nunca usa palabras reservadas (`www`, `admin`, `api`…).
+- **Dominio propio** (plan Profesional o superior): el acueducto lo agrega en *Configuración → Dominio* y crea dos registros DNS:
+  - `TXT _aguamata-verify.<dominio>` con el token, para demostrar que el dominio es suyo.
+  - `CNAME <dominio>` apuntando a `tenants.<dominio de la plataforma>`, para dirigir el tráfico.
+  Solo los dominios **verificados** resuelven, quedan permitidos en CORS y reciben certificado TLS.
+- En la dirección de un acueducto, el login muestra su marca y solo admite usuarios de **ese** acueducto.
+  `/registro` y `/admin` solo existen en el dominio de la plataforma.
+- `GET /api/v1/public/tls-ask?domain=` responde 200 únicamente para hosts válidos. Sirve como endpoint `ask` del
+  TLS bajo demanda del proxy (por ejemplo Caddy `on_demand_tls`), para no emitir certificados a dominios ajenos.
+- Variables: `PLATFORM_WEB_ORIGIN` (API) y `NEXT_PUBLIC_PLATFORM_ORIGIN` (web).
+
+### Medidores y lecturas
+
+- Un medidor activo por suscriptor. Las FK compuestas `(id, organization_id)` impiden enlazar registros entre acueductos,
+  porque las FK de Postgres no pasan por RLS.
+- Una lectura por medidor y período (`AAAA-MM`). La lectura anterior es el último valor realmente leído.
+- Sin lectura (predio cerrado, medidor dañado…), se registra la causal y el consumo se estima con el promedio (Ley 142, art. 146).
+- Se marcan para revisión: lectura menor a la anterior (no se factura consumo negativo), consumo cero y consumo mayor
+  al doble del promedio (desviación significativa, Ley 142, art. 149).
+- No se puede corregir un período si ya hay lecturas posteriores o si el período ya se facturó (`locked`).
+
 ### Planes y límites
 
 Los planes, módulos y límites viven en `platform.plans`, `plan_features`, `plan_limits` y `org_entitlement_overrides`.

@@ -8,7 +8,7 @@ import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL });
 
-const ALL = ['subscribers', 'meters', 'billing', 'payments', 'receivables', 'accounting', 'documents', 'reports', 'automations', 'integrations', 'excel_import'];
+const ALL = ['subscribers', 'meters', 'billing', 'payments', 'receivables', 'accounting', 'documents', 'reports', 'automations', 'integrations', 'excel_import', 'custom_domain'];
 const CORE = ['subscribers', 'meters', 'billing', 'payments', 'receivables', 'reports'];
 
 const PLANS = [
@@ -16,7 +16,7 @@ const PLANS = [
     limits: { max_subscribers: 50, max_admin_users: 1, storage_mb: 100, documents_per_month: 100, automations: 0, integrations: 0 } },
   { code: 'basic', name: 'Básico', monthly: 89_000, yearly: 890_000, trialDays: 30, features: [...CORE, 'documents', 'excel_import'],
     limits: { max_subscribers: 300, max_admin_users: 3, storage_mb: 1024, documents_per_month: 1000, automations: 2, integrations: 0 } },
-  { code: 'pro', name: 'Profesional', monthly: 189_000, yearly: 1_890_000, trialDays: 30, features: [...CORE, 'documents', 'excel_import', 'accounting', 'automations'],
+  { code: 'pro', name: 'Profesional', monthly: 189_000, yearly: 1_890_000, trialDays: 30, features: [...CORE, 'documents', 'excel_import', 'accounting', 'automations', 'custom_domain'],
     limits: { max_subscribers: 1500, max_admin_users: 8, storage_mb: 5120, documents_per_month: 10000, automations: 10, integrations: 2 } },
   { code: 'advanced', name: 'Avanzado', monthly: 389_000, yearly: 3_890_000, trialDays: 30, features: ALL,
     limits: { max_subscribers: 5000, max_admin_users: 25, storage_mb: 20480, documents_per_month: -1, automations: -1, integrations: 10 } },

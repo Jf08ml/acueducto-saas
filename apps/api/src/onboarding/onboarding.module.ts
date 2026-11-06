@@ -1,6 +1,8 @@
 import { Body, ConflictException, Controller, Injectable, Module, Post } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
-import { registerOrganizationSchema, RegisterOrganizationInput } from '@agua-mata/shared';
+import { randomBytes } from 'node:crypto';
+import { RESERVED_SLUGS, registerOrganizationSchema, RegisterOrganizationInput, tenantDefaultUrl } from '@agua-mata/shared';
+import { platformOrigin } from '../domains/domains.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ZodPipe } from '../common/zod.pipe';
@@ -39,8 +41,11 @@ export class OnboardingService {
     const plan = await db.plan.findUniqueOrThrow({ where: { code: TRIAL_PLAN_CODE } });
     const now = new Date();
     const trialEnd = new Date(now.getTime() + plan.trialDays * 86_400_000);
+    // El slug es también el subdominio por defecto ({slug}.plataforma): único, sin palabras reservadas.
     const baseSlug = slugify(input.name) || 'acueducto';
-    const slug = (await db.organization.findUnique({ where: { slug: baseSlug } })) ? `${baseSlug}-${input.nit.slice(-4)}` : baseSlug;
+    let slug = RESERVED_SLUGS.has(baseSlug) ? `${baseSlug}-${input.nit.slice(-4)}` : baseSlug;
+    if (await db.organization.findUnique({ where: { slug } })) slug = `${baseSlug}-${input.nit.slice(-4)}`;
+    if (await db.organization.findUnique({ where: { slug } })) slug = `${baseSlug}-${randomBytes(3).toString('hex')}`;
 
     const org = await db.$transaction(async (tx) => {
       const org = await tx.organization.create({
@@ -84,7 +89,12 @@ export class OnboardingService {
       data: { plan: plan.code, trialEndsAt: trialEnd.toISOString() },
     });
 
-    return { organizationId: org.org.id, slug: org.org.slug, trialEndsAt: trialEnd };
+    return {
+      organizationId: org.org.id,
+      slug: org.org.slug,
+      defaultUrl: tenantDefaultUrl(platformOrigin(), org.org.slug),
+      trialEndsAt: trialEnd,
+    };
   }
 }
 

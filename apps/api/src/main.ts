@@ -2,11 +2,19 @@ import 'dotenv/config';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { DomainsService } from './domains/domains.module';
 
 export async function createApp() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api/v1');
-  app.enableCors({ origin: process.env.WEB_ORIGIN ?? 'http://localhost:3000' });
+  // CORS dinámico: la web puede servirse desde el dominio de la plataforma, el subdominio de cada
+  // acueducto o un dominio propio verificado.
+  const domains = app.get(DomainsService);
+  app.enableCors({
+    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      domains.isAllowedOrigin(origin).then((ok) => cb(null, ok), () => cb(null, false));
+    },
+  });
   return app;
 }
 
