@@ -43,6 +43,8 @@ model Organization {
   contactPhone          String    @map("contact_phone")
   status                OrgStatus @default(onboarding)
   branding              Json      @default("{}")
+  /// Intereses de mora, cargo de reconexión y umbral de suspensión (ver collectionSettingsSchema).
+  collectionSettings    Json      @default("{}") @map("collection_settings")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
@@ -60,6 +62,8 @@ model Organization {
   invoiceLines       InvoiceLine[]
   payments           Payment[]
   paymentAllocations PaymentAllocation[]
+  subscriberCharges  SubscriberCharge[]
+  serviceEvents      ServiceEvent[]
   invitations        Invitation[]
 
   @@map("organizations")
@@ -335,15 +339,19 @@ model Subscriber {
   stratum        Int?
   /// residencial | comercial | industrial | oficial. Residencial usa el factor de su estrato.
   usage          String   @default("residencial")
+  /// connected | suspended (servicio de agua). Distinto de status (si se factura o no).
+  serviceStatus  String   @default("connected") @map("service_status")
   status         String   @default("active")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  meters       Meter[]
-  readings     MeterReading[]
-  invoices     Invoice[]
-  payments     Payment[]
+  organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  meters        Meter[]
+  readings      MeterReading[]
+  invoices      Invoice[]
+  payments      Payment[]
+  charges       SubscriberCharge[]
+  serviceEvents ServiceEvent[]
 
   @@unique([id, organizationId], map: "subscribers_id_org_key")
   @@unique([organizationId, code])
@@ -464,6 +472,8 @@ model Invoice {
   paidAmount         Decimal  @default(0) @map("paid_amount") @db.Decimal(14, 2)
   /// Informativo: deuda de facturas anteriores al momento de emitir (se muestra en el recibo).
   previousBalance    Decimal  @default(0) @map("previous_balance") @db.Decimal(14, 2)
+  /// Parte del total que corresponde a intereses de mora (no genera intereses: sin anatocismo).
+  interestAmount     Decimal  @default(0) @map("interest_amount") @db.Decimal(14, 2)
   createdAt          DateTime @default(now()) @map("created_at")
 
   organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -471,6 +481,7 @@ model Invoice {
   subscriber    Subscriber          @relation(fields: [subscriberId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "invoices_subscriber_same_org_fkey")
   lines         InvoiceLine[]
   allocations   PaymentAllocation[]
+  charges       SubscriberCharge[]
 
   @@unique([id, organizationId], map: "invoices_id_org_key")
   @@unique([organizationId, number])
@@ -543,5 +554,52 @@ model PaymentAllocation {
   @@index([organizationId, paymentId])
   @@index([organizationId, invoiceId])
   @@map("payment_allocations")
+  @@schema("tenant")
+}
+
+/// Cargo adicional pendiente de facturar (reconexión, otros). Se incluye en la siguiente factura del suscriptor.
+model SubscriberCharge {
+  id              String    @id @default(uuid()) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  subscriberId    String    @map("subscriber_id") @db.Uuid
+  concept         String // reconexion | otro
+  description     String
+  amount          Decimal   @db.Decimal(14, 2)
+  billedInvoiceId String?   @map("billed_invoice_id") @db.Uuid
+  createdById     String?   @map("created_by_id") @db.Uuid
+  voidedAt        DateTime? @map("voided_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subscriber    Subscriber     @relation(fields: [subscriberId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "charges_subscriber_same_org_fkey")
+  billedInvoice Invoice?       @relation(fields: [billedInvoiceId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "charges_invoice_same_org_fkey")
+  serviceEvents ServiceEvent[]
+
+  @@unique([id, organizationId], map: "subscriber_charges_id_org_key")
+  @@index([organizationId, subscriberId])
+  @@map("subscriber_charges")
+  @@schema("tenant")
+}
+
+/// Historial de suspensiones y reconexiones del servicio.
+model ServiceEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  subscriberId   String   @map("subscriber_id") @db.Uuid
+  type           String // suspension | reconnection
+  date           DateTime @db.Date
+  reason         String
+  notes          String?
+  balanceAtEvent Decimal  @default(0) @map("balance_at_event") @db.Decimal(14, 2)
+  chargeId       String?  @map("charge_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subscriber   Subscriber        @relation(fields: [subscriberId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "service_events_subscriber_same_org_fkey")
+  charge       SubscriberCharge? @relation(fields: [chargeId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "service_events_charge_same_org_fkey")
+
+  @@index([organizationId, subscriberId, date])
+  @@map("service_events")
   @@schema("tenant")
 }

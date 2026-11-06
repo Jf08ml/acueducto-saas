@@ -24,13 +24,17 @@ function RolePicker({ value, onChange, actorRole }: { value: string; onChange: (
 }
 
 /** Enlace de invitación para compartir a mano mientras no haya correo configurado. */
-function LinkShare({ link, email, orgName }: { link: { inviteUrl: string; expiresAt: string; emailSent: boolean }; email: string; orgName: string }) {
+function LinkShare({ link, email, orgName }: { link: { inviteUrl: string; expiresAt: string; emailSent: boolean; emailError?: string }; email: string; orgName: string }) {
   const [copied, setCopied] = useState(false);
   const text = `Hola, te invito a ${orgName} en AguaMata. Crea tu acceso aquí: ${link.inviteUrl}`;
   return (
     <div className="stack">
       <div className="alert alert-ok">Invitación lista para <strong>{email}</strong>.</div>
-      {!link.emailSent && <p className="muted small">El envío por correo aún no está configurado. Comparte el enlace por WhatsApp o cópialo. Solo se muestra ahora.</p>}
+      {link.emailSent
+        ? <p className="small">Le enviamos un correo con el enlace. También puedes compartirlo por WhatsApp; solo se muestra ahora.</p>
+        : link.emailError
+          ? <div className="alert alert-warn small">No se pudo enviar el correo. Comparte el enlace por WhatsApp o cópialo; solo se muestra ahora.</div>
+          : <p className="muted small">El envío por correo no está configurado en esta instalación. Comparte el enlace por WhatsApp o cópialo; solo se muestra ahora.</p>}
       <code style={{ display: 'block', padding: 10 }}>{link.inviteUrl}</code>
       <div className="row">
         <button className="btn btn-secondary" onClick={() => navigator.clipboard?.writeText(link.inviteUrl).then(() => setCopied(true))}>{copied ? '¡Copiado!' : 'Copiar enlace'}</button>
@@ -47,7 +51,7 @@ export default function UsuariosPage() {
   const [error, setError] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: '', role: 'operator' });
-  const [link, setLink] = useState<{ inviteUrl: string; expiresAt: string; emailSent: boolean; email: string } | null>(null);
+  const [link, setLink] = useState<{ inviteUrl: string; expiresAt: string; emailSent: boolean; emailError?: string; email: string } | null>(null);
   const [editing, setEditing] = useState<any>(null);
   const [editForm, setEditForm] = useState({ role: '', status: '' });
   const [removing, setRemoving] = useState<any>(null);

@@ -129,6 +129,32 @@ Flujo: **Facturación → Facturar período → previsualización → Emitir**. 
 - **Lista de suspensión:** suscriptores con N o más facturas vencidas (N lo elige el acueducto). La Ley 142, art. 140
   (modificado por la Ley 689 de 2001), fija el máximo en 3 períodos para facturación mensual y 2 para bimestral.
 
+### Intereses de mora, cargos, suspensión y reconexión
+
+Se configuran en *Configuración → Cobro* (`collectionSettings` de la organización).
+
+- **Intereses de mora** (desactivados por defecto): interés simple mensual, prorrateado por días, con tasa distinta para usuarios residenciales y no residenciales y días de gracia opcionales.
+  - Se calculan al emitir, hasta la fecha de expedición, y se suman como línea de la nueva factura (`interestAmount`).
+  - La base es el capital vencido sin los intereses ya facturados: no hay anatocismo.
+  - Cada tramo se cobra una sola vez, porque el cálculo arranca en la última factura vigente con intereses. Si se anula esa facturación, el punto de partida vuelve atrás de forma automática.
+  - Orientación (validar con un asesor): para usuarios residenciales suele aplicarse la tasa civil y para no residenciales la comercial, sin superar la tasa de usura.
+- **Cargos adicionales** (`subscriber_charges`): la reconexión y los cargos manuales se suman a la siguiente factura y quedan amarrados a ella.
+  Un cargo facturado no se anula directamente; al anular la facturación vuelve a quedar pendiente.
+- **Suspensión y reconexión** (`service_events`, `subscribers.service_status`):
+  - Cada suspensión y reconexión queda en el historial con fecha, motivo, usuario y saldo en ese momento.
+  - Reconectar exige estar al día (Ley 142, art. 142), salvo que se marque «con deuda» y se registre el acuerdo de pago.
+  - El cargo de reconexión configurado se carga a la siguiente factura.
+- La **lista de suspensión** usa el umbral configurado y excluye a quienes ya están suspendidos.
+
+### Correo
+
+`MAIL_PROVIDER` = `log` (por defecto: no envía), `ses` o `smtp`. Ver `apps/api/.env.example`.
+
+- **Amazon SES** (API v2): credenciales por la cadena estándar de AWS. `MAIL_FROM` debe estar verificado en SES. `SES_CONFIGURATION_SET` es opcional.
+- **SMTP**: `SMTP_URL` o `SMTP_HOST/PORT/USER/PASS/SECURE`.
+- El remitente visible es el nombre del acueducto (con la dirección de `MAIL_FROM`) y la respuesta va al correo de contacto del acueducto.
+- Si el proveedor falla, la operación no se rompe: se registra el error y la UI ofrece el enlace para compartirlo por WhatsApp.
+
 ### Usuarios del acueducto
 
 | Rol | Puede |

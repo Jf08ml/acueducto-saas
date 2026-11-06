@@ -41,12 +41,12 @@ export default function PeriodoPage() {
       const bp = await api(`/billing/periods/${params.p}`).catch((e) => (e.status === 404 ? null : Promise.reject(e)));
       if (bp?.status === 'issued') { setIssued(bp); setPreview(null); return; }
       setIssued(null);
-      if (canBill) setPreview(await api('/billing/preview', { method: 'POST', body: JSON.stringify({ period: params.p, options }) }));
+      if (canBill) setPreview(await api('/billing/preview', { method: 'POST', body: JSON.stringify({ period: params.p, options, issueDate: dates.issueDate }) }));
     } catch (e) {
       setError(errorText(e));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params, canBill]);
+  }, [params, canBill, dates.issueDate]);
   useEffect(() => { load(); }, [load]);
 
   async function issue(e: React.FormEvent) {
@@ -143,7 +143,11 @@ export default function PeriodoPage() {
     <>
       <PageHeader
         title={`Previsualización ${params.p}`}
-        description="Así quedarían las facturas. Nada se ha guardado todavía."
+        description={<>Así quedarían las facturas. Nada se ha guardado todavía.{' '}
+          <label className="row" style={{ display: 'inline-flex', gap: 6, marginTop: 8 }}>
+            <span className="small">Fecha de expedición (los intereses se calculan hasta este día):</span>
+            <input type="date" value={dates.issueDate} onChange={(e) => setDates({ issueDate: e.target.value, dueDate: addDays(e.target.value, 15) })} style={{ width: 'auto' }} />
+          </label></>}
         actions={<>{back}{preview?.canIssue && <button className="btn" onClick={() => { setModalError(''); setIssueOpen(true); }}>Emitir {fmtNumber(preview.totals.invoices)} facturas</button>}</>}
       />
       {error && <div className="alert alert-danger" style={{ marginBottom: 16 }}>{error}</div>}
@@ -169,12 +173,15 @@ export default function PeriodoPage() {
             <Stat label="Total a facturar" value={fmtMoney(preview.totals.total)} />
             <Stat label="Subsidios" value={fmtMoney(preview.totals.subsidy)} />
             <Stat label="Contribuciones" value={fmtMoney(preview.totals.contribution)} />
+            {(preview.totals.interest > 0 || preview.totals.charges > 0) && (
+              <Stat label="Intereses y cargos" value={fmtMoney(preview.totals.interest + preview.totals.charges)} sub={`Mora ${fmtMoney(preview.totals.interest)} · cargos ${fmtMoney(preview.totals.charges)}`} />
+            )}
             <Stat label="Consumo" value={`${fmtNumber(preview.totals.consumptionM3, 1)} m³`} sub={preview.warnings.unmetered ? `${preview.warnings.unmetered} sin medidor` : undefined} />
           </div>
           <section className="card card-flush">
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Suscriptor</th><th>Uso / estrato</th><th className="right">Consumo</th><th>Lectura</th><th className="right">Servicio</th><th className="right">Subsidio</th><th className="right">Contribución</th><th className="right">Total</th></tr></thead>
+                <thead><tr><th>Suscriptor</th><th>Uso / estrato</th><th className="right">Consumo</th><th>Lectura</th><th className="right">Servicio</th><th className="right">Subsidio</th><th className="right">Contribución</th><th className="right">Mora y cargos</th><th className="right">Total</th></tr></thead>
                 <tbody>
                   {preview.rows.map((r: any) => {
                     const flag = FLAG[r.flag];
@@ -187,6 +194,7 @@ export default function PeriodoPage() {
                         <td className="right mono">{fmtMoney(r.subtotal)}</td>
                         <td className="right mono">{r.subsidy ? fmtMoney(r.subsidy) : '—'}</td>
                         <td className="right mono">{r.contribution ? fmtMoney(r.contribution) : '—'}</td>
+                        <td className="right mono">{r.interest + r.charges ? fmtMoney(r.interest + r.charges) : '—'}</td>
                         <td className="right mono"><strong>{fmtMoney(r.total)}</strong></td>
                       </tr>
                     );

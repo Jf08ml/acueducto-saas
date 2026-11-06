@@ -21,7 +21,7 @@ export interface TariffForBilling {
 }
 
 export interface InvoiceLineCalc {
-  concept: 'cargo_fijo' | 'consumo_basico' | 'consumo_complementario' | 'consumo_suntuario' | 'subsidio' | 'contribucion';
+  concept: 'cargo_fijo' | 'consumo_basico' | 'consumo_complementario' | 'consumo_suntuario' | 'subsidio' | 'contribucion' | 'interes_mora' | 'reconexion' | 'otro_cargo';
   description: string;
   quantity: number;
   unitPrice: number;
@@ -101,7 +101,7 @@ export type BillingOptions = z.infer<typeof billingOptionsSchema>;
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-export const previewBillingSchema = z.object({ period: periodSchema, options: billingOptionsSchema });
+export const previewBillingSchema = z.object({ period: periodSchema, options: billingOptionsSchema, issueDate: date.optional() });
 export const issueBillingSchema = z
   .object({ period: periodSchema, options: billingOptionsSchema, issueDate: date, dueDate: date })
   .refine((v) => v.dueDate >= v.issueDate, { message: 'La fecha límite de pago no puede ser anterior a la de expedición', path: ['dueDate'] });
@@ -116,4 +116,7 @@ export const CONCEPT_LABEL: Record<string, string> = {
   consumo_suntuario: 'Consumo suntuario',
   subsidio: 'Subsidio',
   contribucion: 'Contribución',
+  interes_mora: 'Intereses de mora',
+  reconexion: 'Reconexión',
+  otro_cargo: 'Otros cargos',
 };

@@ -5,8 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
-  BillingOptions, computeInvoice, InvoiceCalc, issueBillingSchema, IssueBillingInput, periodSchema, previewBillingSchema,
-  TariffForBilling, voidBillingSchema,
+  BillingOptions, computeInvoice, computeLateInterest, InvoiceCalc, issueBillingSchema, IssueBillingInput, OverdueBase, periodSchema,
+  previewBillingSchema, TariffForBilling, voidBillingSchema, withCollectionDefaults,
 } from '@agua-mata/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
@@ -14,7 +14,7 @@ import { AuditService } from '../audit/audit.service';
 import { ZodPipe } from '../common/zod.pipe';
 import { TenantScoped } from '../auth/decorators';
 import { currentContext } from '../common/request-context';
-import { lockMoney, OPEN_STATUSES } from '../receivables/receivables.module';
+import { lockMoney, OPEN_STATUSES } from '../common/money';
 
 const n = (d: Prisma.Decimal | number | null | undefined) => (d === null || d === undefined ? 0 : Number(d));
 
@@ -25,7 +25,11 @@ interface DraftInvoice {
     meterSerial: string | null; previousValue: number | null; currentValue: number | null; consumptionM3: number;
     isEstimated: boolean; anomaly: string | null; observation: string | null; flag: 'ok' | 'sin_lectura' | 'sin_medidor';
   };
+  /** Servicio (computeInvoice) + intereses de mora + cargos adicionales; `calc.total` ya los incluye. */
   calc: InvoiceCalc;
+  interest: number;
+  charges: number;
+  chargeIds: string[];
 }
 
 @Injectable()
@@ -47,16 +51,39 @@ export class BillingService {
     return { row: t, tariff };
   }
 
-  /** Arma (sin guardar) las facturas del período. Lo usan la previsualización y la emisión. */
-  private async build(period: string, options: BillingOptions) {
+  /**
+   * Arma (sin guardar) las facturas del período. Lo usan la previsualización y la emisión.
+   * `issueDate` es la fecha hasta la que se calculan los intereses de mora.
+   */
+  private async build(period: string, options: BillingOptions, issueDate: string) {
     const { row: tariffRow, tariff } = await this.activeTariff();
-    const [subscribers, meters, readings] = await Promise.all([
+    const org = await this.prisma.platform.organization.findUniqueOrThrow({ where: { id: currentContext().organizationId! }, select: { collectionSettings: true } });
+    const settings = withCollectionDefaults(org.collectionSettings);
+    const [subscribers, meters, readings, pendingCharges, overdue, lastInterest] = await Promise.all([
       this.prisma.tenant.subscriber.findMany({ where: { status: 'active' }, orderBy: { code: 'asc' } }),
       this.prisma.tenant.meter.findMany({ where: { status: 'active' } }),
       this.prisma.tenant.meterReading.findMany({ where: { period } }),
+      this.prisma.tenant.subscriberCharge.findMany({ where: { billedInvoiceId: null, voidedAt: null }, orderBy: { createdAt: 'asc' } }),
+      settings.lateInterestEnabled
+        ? this.prisma.tenant.invoice.findMany({
+            where: { status: { in: OPEN_STATUSES }, dueDate: { lt: new Date(issueDate) } },
+            select: { subscriberId: true, number: true, dueDate: true, total: true, paidAmount: true, interestAmount: true },
+          })
+        : Promise.resolve([]),
+      // Última factura vigente en la que se cobraron intereses a cada suscriptor: piso para no cobrar dos veces.
+      this.prisma.tenant.invoice.groupBy({ by: ['subscriberId'], where: { status: { not: 'void' }, interestAmount: { gt: 0 } }, _max: { issueDate: true } }),
     ]);
     const meterBySub = new Map(meters.map((m) => [m.subscriberId, m]));
     const readingByMeter = new Map(readings.map((r) => [r.meterId, r]));
+    const chargesBySub = new Map<string, typeof pendingCharges>();
+    for (const c of pendingCharges) chargesBySub.set(c.subscriberId, [...(chargesBySub.get(c.subscriberId) ?? []), c]);
+    const overdueBySub = new Map<string, OverdueBase[]>();
+    for (const i of overdue) {
+      // Capital pendiente: lo que falta por pagar sin contar los intereses ya facturados (no hay intereses sobre intereses).
+      const base = Math.max(0, n(i.total) - n(i.paidAmount) - n(i.interestAmount));
+      overdueBySub.set(i.subscriberId, [...(overdueBySub.get(i.subscriberId) ?? []), { invoiceNumber: i.number, dueDate: i.dueDate.toISOString().slice(0, 10), base }]);
+    }
+    const floorBySub = new Map(lastInterest.map((g) => [g.subscriberId, g._max.issueDate?.toISOString().slice(0, 10) ?? null]));
 
     const drafts: DraftInvoice[] = [];
     const missingReadings: { code: string; fullName: string }[] = [];
@@ -78,20 +105,41 @@ export class BillingService {
           isEstimated: true, anomaly: null, observation: 'sin_medidor', flag: 'sin_medidor',
         };
       }
+      const calc = computeInvoice(tariff, { consumptionM3: r.consumptionM3, usage: s.usage, stratum: s.stratum });
+
+      // Intereses de mora sobre facturas anteriores vencidas (no les aplica subsidio ni contribución).
+      let interest = 0;
+      const od = overdueBySub.get(s.id);
+      if (settings.lateInterestEnabled && od?.length) {
+        const rate = s.usage === 'residencial' ? settings.residentialMonthlyRatePct : settings.nonResidentialMonthlyRatePct;
+        const li = computeLateInterest(od, issueDate, rate, settings.graceDays, floorBySub.get(s.id) ?? null);
+        if (li.amount > 0) {
+          interest = li.amount;
+          const days = Math.max(...li.details.map((d) => d.days));
+          calc.lines.push({ concept: 'interes_mora', description: `Intereses de mora (${rate}% mensual, hasta ${days} días, facturas ${li.details.map((d) => d.invoiceNumber).join(', ')})`, quantity: 1, unitPrice: interest, amount: interest });
+        }
+      }
+      // Cargos adicionales pendientes (reconexión, otros).
+      const subCharges = chargesBySub.get(s.id) ?? [];
+      for (const c of subCharges) {
+        calc.lines.push({ concept: c.concept === 'reconexion' ? 'reconexion' : 'otro_cargo', description: c.description, quantity: 1, unitPrice: n(c.amount), amount: Math.round(n(c.amount)) });
+      }
+      const charges = subCharges.reduce((a, c) => a + Math.round(n(c.amount)), 0);
+      calc.total += interest + charges;
+
       drafts.push({
         subscriberId: s.id,
         subscriber: { code: s.code, fullName: s.fullName, documentNumber: s.documentNumber, address: s.address, stratum: s.stratum, usage: s.usage },
-        reading: r,
-        calc: computeInvoice(tariff, { consumptionM3: r.consumptionM3, usage: s.usage, stratum: s.stratum }),
+        reading: r, calc, interest, charges, chargeIds: subCharges.map((c) => c.id),
       });
     }
 
     const totals = drafts.reduce(
       (a, d) => ({
         total: a.total + d.calc.total, subsidy: a.subsidy + d.calc.subsidy, contribution: a.contribution + d.calc.contribution,
-        consumptionM3: a.consumptionM3 + d.reading.consumptionM3,
+        consumptionM3: a.consumptionM3 + d.reading.consumptionM3, interest: a.interest + d.interest, charges: a.charges + d.charges,
       }),
-      { total: 0, subsidy: 0, contribution: 0, consumptionM3: 0 },
+      { total: 0, subsidy: 0, contribution: 0, consumptionM3: 0, interest: 0, charges: 0 },
     );
     const warnings = {
       missingReadings,
@@ -102,11 +150,11 @@ export class BillingService {
     return { tariffRow, drafts, totals, warnings };
   }
 
-  async preview(period: string, options: BillingOptions) {
+  async preview(period: string, options: BillingOptions, issueDate = new Date().toISOString().slice(0, 10)) {
     const existing = await this.prisma.tenant.billingPeriod.findUnique({
       where: { organizationId_period: { organizationId: currentContext().organizationId!, period } },
     });
-    const { tariffRow, drafts, totals, warnings } = await this.build(period, options);
+    const { tariffRow, drafts, totals, warnings } = await this.build(period, options, issueDate);
     return {
       period,
       alreadyIssued: existing?.status === 'issued',
@@ -117,7 +165,7 @@ export class BillingService {
       rows: drafts.map((d) => ({
         subscriberId: d.subscriberId, code: d.subscriber.code, fullName: d.subscriber.fullName, stratum: d.subscriber.stratum, usage: d.subscriber.usage,
         consumptionM3: d.reading.consumptionM3, flag: d.reading.flag, anomaly: d.reading.anomaly, isEstimated: d.reading.isEstimated,
-        subtotal: d.calc.subtotal, subsidy: d.calc.subsidy, contribution: d.calc.contribution, total: d.calc.total,
+        subtotal: d.calc.subtotal, subsidy: d.calc.subsidy, contribution: d.calc.contribution, interest: d.interest, charges: d.charges, total: d.calc.total,
       })),
     };
   }
@@ -132,7 +180,7 @@ export class BillingService {
     });
     if (existing?.status === 'issued') throw new ConflictException('Este período ya está facturado. Anúlalo si necesitas volver a emitirlo');
 
-    const { tariffRow, drafts, totals, warnings } = await this.build(input.period, input.options);
+    const { tariffRow, drafts, totals, warnings } = await this.build(input.period, input.options, input.issueDate);
     if (!drafts.length) throw new BadRequestException('No hay suscriptores activos para facturar');
     if (input.options.missingReadings === 'block' && warnings.missingReadings.length) {
       throw new BadRequestException({
@@ -182,6 +230,7 @@ export class BillingService {
 
       const invoices: Prisma.InvoiceCreateManyInput[] = [];
       const lines: Prisma.InvoiceLineCreateManyInput[] = [];
+      const chargeLinks: { invoiceId: string; chargeIds: string[] }[] = [];
       for (const d of drafts) {
         const id = randomUUID();
         invoices.push({
@@ -190,13 +239,20 @@ export class BillingService {
           readingSnapshot: { ...d.reading, history: histBy.get(d.subscriberId) ?? [] } as Prisma.InputJsonValue,
           consumptionM3: d.reading.consumptionM3, subtotal: d.calc.subtotal, subsidyAmount: d.calc.subsidy,
           contributionAmount: d.calc.contribution, total: d.calc.total, previousBalance: prevBy.get(d.subscriberId) ?? 0,
+          interestAmount: d.interest,
         });
+        if (d.chargeIds.length) chargeLinks.push({ invoiceId: id, chargeIds: d.chargeIds });
         d.calc.lines.forEach((l, i) =>
           lines.push({ organizationId: organizationId!, invoiceId: id, concept: l.concept, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, amount: l.amount, sortOrder: i }),
         );
       }
       for (let i = 0; i < invoices.length; i += 1000) await tx.invoice.createMany({ data: invoices.slice(i, i + 1000) });
       for (let i = 0; i < lines.length; i += 5000) await tx.invoiceLine.createMany({ data: lines.slice(i, i + 5000) });
+      // Los cargos quedan amarrados a su factura. Si alguno cambió desde la previsualización, se revierte todo.
+      for (const link of chargeLinks) {
+        const res = await tx.subscriberCharge.updateMany({ where: { id: { in: link.chargeIds }, billedInvoiceId: null, voidedAt: null }, data: { billedInvoiceId: link.invoiceId } });
+        if (res.count !== link.chargeIds.length) throw new ConflictException('Los cargos pendientes cambiaron mientras se facturaba. Vuelve a intentarlo');
+      }
       // Las lecturas facturadas ya no se pueden modificar.
       await tx.meterReading.updateMany({ where: { period: input.period }, data: { locked: true } });
       return { billingPeriodId: bp.id, firstNumber: invoices[0].number, lastNumber: invoices[invoices.length - 1].number };
@@ -220,6 +276,9 @@ export class BillingService {
       // Dentro del bloqueo: ningún pago puede entrar entre esta verificación y la anulación.
       const paid = await tx.invoice.count({ where: { billingPeriodId: bp.id, paidAmount: { gt: 0 } } });
       if (paid) throw new ConflictException(`No se puede anular: ${paid} facturas tienen pagos o abonos. Anula primero esos pagos`);
+      // Los cargos de las facturas anuladas vuelven a quedar pendientes para la siguiente emisión.
+      const voided = await tx.invoice.findMany({ where: { billingPeriodId: bp.id, status: { not: 'void' } }, select: { id: true } });
+      await tx.subscriberCharge.updateMany({ where: { billedInvoiceId: { in: voided.map((v) => v.id) } }, data: { billedInvoiceId: null } });
       await tx.invoice.updateMany({ where: { billingPeriodId: bp.id, status: { not: 'void' } }, data: { status: 'void' } });
       await tx.meterReading.updateMany({ where: { period }, data: { locked: false } });
       await tx.billingPeriod.update({ where: { id: bp.id }, data: { status: 'voided', voidedAt: new Date(), voidReason: reason } });
@@ -299,7 +358,7 @@ class BillingController {
   @Post('preview')
   @TenantScoped('owner', 'admin')
   preview(@Body(new ZodPipe(previewBillingSchema)) body: z.infer<typeof previewBillingSchema>) {
-    return this.billing.preview(body.period, body.options);
+    return this.billing.preview(body.period, body.options, body.issueDate);
   }
 
   @Post('issue')

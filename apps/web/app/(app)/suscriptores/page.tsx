@@ -100,7 +100,10 @@ export default function SuscriptoresPage() {
                     <td className="mono">{s.documentNumber}</td>
                     <td>{s.address}</td>
                     <td className="small">{s.usage === 'residencial' || !s.usage ? `Estrato ${s.stratum ?? '—'}` : USAGE[s.usage]}</td>
-                    <td><span className={`badge ${s.status === 'active' ? 'badge-ok' : ''}`}>{s.status === 'active' ? 'Activo' : 'Inactivo'}</span></td>
+                    <td>
+                      <span className={`badge ${s.status === 'active' ? 'badge-ok' : ''}`}>{s.status === 'active' ? 'Activo' : 'Inactivo'}</span>
+                      {s.serviceStatus === 'suspended' && <span className="badge badge-danger" style={{ marginLeft: 4 }}>Suspendido</span>}
+                    </td>
                     {canEdit && (
                       <td className="right"><button className="icon-btn" onClick={() => openEdit(s)} aria-label={`Editar ${s.fullName}`} title="Editar"><Icon name="edit" /></button></td>
                     )}

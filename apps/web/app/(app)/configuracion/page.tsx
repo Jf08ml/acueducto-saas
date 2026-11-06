@@ -14,6 +14,7 @@ const STEPS = [
   ['profile', 'Perfil regulatorio'],
   ['tariff', 'Tarifa'],
   ['branding', 'Marca'],
+  ['collections', 'Cobro'],
   ['domain', 'Dominio'],
   ['subscribers', 'Suscriptores'],
   ['compliance', 'Obligaciones'],
@@ -88,6 +89,7 @@ export default function ConfiguracionPage() {
       {step === 'profile' && <ProfileStep state={state} onSaved={() => { load(); setStep('tariff'); }} />}
       {step === 'tariff' && <TariffStep state={state} onSaved={() => { load(); setStep('branding'); }} />}
       {step === 'branding' && <BrandingStep state={state} onSaved={() => { load(); reloadMe(); }} />}
+      {step === 'collections' && <CollectionsStep />}
       {step === 'domain' && <DomainStep enabled={me.entitlements.features.custom_domain === true} />}
       {step === 'subscribers' && <ImportStep onImported={load} />}
       {step === 'compliance' && <ComplianceStep />}
@@ -102,6 +104,70 @@ export default function ConfiguracionPage() {
       )}
       {error && <p className="alert alert-danger">{error}</p>}
     </div>
+  );
+}
+
+function CollectionsStep() {
+  const [f, setF] = useState<any>(null);
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  useEffect(() => { api('/collections/settings').then((s) => setF(Object.fromEntries(Object.entries(s).map(([k, v]) => [k, typeof v === 'number' ? String(v) : v])))).catch((e) => setMsg({ kind: 'danger', text: errMsg(e) })); }, []);
+  if (!f) return msg ? <p className="alert alert-danger">{msg.text}</p> : <p className="muted">Cargando…</p>;
+
+  const num = (v: string) => Number(String(v).replace(',', '.') || 0);
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg(null);
+    try {
+      await api('/collections/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          lateInterestEnabled: f.lateInterestEnabled, residentialMonthlyRatePct: num(f.residentialMonthlyRatePct),
+          nonResidentialMonthlyRatePct: num(f.nonResidentialMonthlyRatePct), graceDays: Math.round(num(f.graceDays)),
+          reconnectionFee: num(f.reconnectionFee), suspensionMinOverdue: Math.round(num(f.suspensionMinOverdue)),
+        }),
+      });
+      setMsg({ kind: 'ok', text: 'Guardado. Aplica desde la próxima facturación.' });
+    } catch (err) {
+      setMsg({ kind: 'danger', text: errMsg(err) });
+    }
+  }
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+
+  return (
+    <form className="card stack" onSubmit={save}>
+      <h2>Cobro de cartera</h2>
+      <p className="muted">Intereses de mora, cargo de reconexión y criterio de suspensión. Los cambios aplican a las facturas que emitas de aquí en adelante.</p>
+
+      <label className="radio-card">
+        <input type="checkbox" checked={f.lateInterestEnabled} onChange={(e) => setF({ ...f, lateInterestEnabled: e.target.checked })} />
+        <span><strong>Cobrar intereses de mora</strong><br /><span className="muted">Se suman a la siguiente factura, prorrateados por días, sobre el capital vencido. Nunca se cobran intereses sobre intereses.</span></span>
+      </label>
+      {f.lateInterestEnabled && (
+        <div className="grid2">
+          <label className="field">Tasa mensual residencial (%)<input inputMode="decimal" value={f.residentialMonthlyRatePct} onChange={set('residentialMonthlyRatePct')} required /></label>
+          <label className="field">Tasa mensual no residencial (%)<input inputMode="decimal" value={f.nonResidentialMonthlyRatePct} onChange={set('nonResidentialMonthlyRatePct')} required /></label>
+          <label className="field">Días de gracia después del vencimiento<input inputMode="numeric" value={f.graceDays} onChange={set('graceDays')} /></label>
+        </div>
+      )}
+      {f.lateInterestEnabled && (
+        <div className="alert alert-info small">
+          Orientación: para usuarios residenciales suele aplicarse la tasa de interés civil y para los no residenciales la comercial,
+          sin superar la tasa de usura vigente que certifica la Superintendencia Financiera. Confírmalo con tu asesor antes de activarlo.
+        </div>
+      )}
+      <div className="grid2">
+        <label className="field">Cargo por reconexión ($)<span className="hint">Se suma a la siguiente factura al reconectar. 0 = sin cargo.</span>
+          <input inputMode="numeric" value={f.reconnectionFee} onChange={set('reconnectionFee')} required />
+        </label>
+        <label className="field">Lista de suspensión desde<span className="hint">Ley 142, art. 140: máximo 3 períodos (mensual) o 2 (bimestral).</span>
+          <select value={f.suspensionMinOverdue} onChange={set('suspensionMinOverdue')}>
+            {[1, 2, 3].map((n) => <option key={n} value={n}>{n} factura{n > 1 ? 's' : ''} vencida{n > 1 ? 's' : ''}</option>)}
+          </select>
+        </label>
+      </div>
+      {msg && <div className={`alert alert-${msg.kind}`}>{msg.text}</div>}
+      <div><button className="btn" type="submit">Guardar</button></div>
+    </form>
   );
 }
 

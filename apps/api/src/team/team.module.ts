@@ -11,7 +11,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
-import { MailService } from '../mail/mail.service';
+import { emailLayout, MailService } from '../mail/mail.service';
 import { ZodPipe } from '../common/zod.pipe';
 import { Public, TenantScoped } from '../auth/decorators';
 import { currentContext } from '../common/request-context';
@@ -115,13 +115,23 @@ export class TeamService {
     const inv = await this.prisma.platform.invitation.findUniqueOrThrow({ where: { id: invitationId } });
     const { org, url } = await this.orgUrl(organizationId);
     const inviteUrl = `${url}/invitacion?token=${token}`;
-    const sent = await this.mail.send({
-      to: inv.email,
-      subject: `Invitación a ${org.name} en AguaMata`,
-      text: `Te invitaron a ${org.name} como ${ROLE_LABEL[inv.role]}. Acepta aquí antes de ${INVITATION_TTL_DAYS} días: ${inviteUrl}`,
-    });
-    await this.audit.log({ action, entity: 'invitation', entityId: inv.id, data: { email: inv.email, role: inv.role } });
-    return { id: inv.id, email: inv.email, role: inv.role, inviteUrl, expiresAt, emailSent: sent.delivered };
+    const intro = `Te invitaron a unirte al equipo de ${org.name} en AguaMata como ${ROLE_LABEL[inv.role]}.`;
+    const expiry = `El enlace es personal, sirve una sola vez y vence en ${INVITATION_TTL_DAYS} días.`;
+    const sent = await this.mail.send(
+      {
+        to: inv.email,
+        replyTo: org.contactEmail,
+        subject: `Invitación a ${org.name}`,
+        text: `${intro}\n\nCrea tu acceso aquí: ${inviteUrl}\n\n${expiry}`,
+        html: emailLayout({
+          orgName: org.name, color: (org.branding as { primaryColor?: string }).primaryColor, title: 'Te invitaron a un acueducto',
+          paragraphs: [intro, expiry], cta: { label: 'Crear mi acceso', url: inviteUrl },
+        }),
+      },
+      org.name,
+    );
+    await this.audit.log({ action, entity: 'invitation', entityId: inv.id, data: { email: inv.email, role: inv.role, emailDelivered: sent.delivered, provider: sent.provider } });
+    return { id: inv.id, email: inv.email, role: inv.role, inviteUrl, expiresAt, emailSent: sent.delivered, emailError: sent.error };
   }
 
   async revoke(id: string) {

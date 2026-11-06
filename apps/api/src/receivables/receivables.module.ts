@@ -13,20 +13,15 @@ import { AuditService } from '../audit/audit.service';
 import { ZodPipe } from '../common/zod.pipe';
 import { TenantScoped } from '../auth/decorators';
 import { currentContext } from '../common/request-context';
+import { CollectionsModule, CollectionsService } from '../collections/collections.module';
+import { lockMoney, OPEN_STATUSES } from '../common/money';
+export { lockMoney, OPEN_STATUSES };
 
 const n = (d: Prisma.Decimal | number | null | undefined) => (d === null || d === undefined ? 0 : Number(d));
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 const today = () => ymd(new Date());
-export const OPEN_STATUSES = ['issued', 'partial'];
 
-/**
- * Serializa las operaciones de dinero de UN acueducto dentro de la transacción (pagos, anulaciones,
- * anulación de facturación). Evita que dos cajeros apliquen dos veces la misma deuda o repitan número.
- */
-export async function lockMoney(tx: Prisma.TransactionClient, organizationId: string) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${organizationId} || ':money'))`;
-}
 
 function invoiceView(i: { id: string; number: number; period: string; dueDate: Date; issueDate: Date; total: Prisma.Decimal; paidAmount: Prisma.Decimal; status: string }, asOf: string) {
   const outstanding = r2(n(i.total) - n(i.paidAmount));
@@ -92,8 +87,13 @@ export class PaymentsService {
     ]);
     const views = invoices.map((i) => invoiceView(i, asOf));
     const open = views.filter((v) => v.outstanding > 0);
+    const pendingCharges = await this.prisma.tenant.subscriberCharge.findMany({ where: { subscriberId, billedInvoiceId: null, voidedAt: null }, orderBy: { createdAt: 'asc' } });
     return {
-      subscriber: { id: subscriber.id, code: subscriber.code, fullName: subscriber.fullName, documentNumber: subscriber.documentNumber, address: subscriber.address, status: subscriber.status },
+      subscriber: {
+        id: subscriber.id, code: subscriber.code, fullName: subscriber.fullName, documentNumber: subscriber.documentNumber, address: subscriber.address,
+        status: subscriber.status, serviceStatus: subscriber.serviceStatus,
+      },
+      pendingCharges: pendingCharges.map((c) => ({ id: c.id, concept: c.concept, description: c.description, amount: n(c.amount), createdAt: c.createdAt })),
       balance: r2(open.reduce((a, v) => a + v.outstanding, 0)),
       overdueInvoices: open.filter((v) => v.daysPastDue > 0).length,
       openInvoices: open,
@@ -232,7 +232,7 @@ export class ReceivablesService {
   async report(asOf: string, minOverdue: number) {
     const open = await this.prisma.tenant.invoice.findMany({
       where: { status: { in: OPEN_STATUSES } },
-      include: { subscriber: { select: { id: true, code: true, fullName: true, address: true, status: true } } },
+      include: { subscriber: { select: { id: true, code: true, fullName: true, address: true, status: true, serviceStatus: true } } },
       orderBy: { dueDate: 'asc' },
     });
     const empty = () => Object.fromEntries(AGING_BUCKETS.map(([k]) => [k, 0])) as Record<AgingBucket, number>;
@@ -253,7 +253,8 @@ export class ReceivablesService {
     }
 
     const rows = [...bySub.values()]
-      .map((r) => ({ ...r, suspensionCandidate: r.overdueInvoices >= minOverdue }))
+      // Ya suspendidos no son "candidatos": aparecen marcados como suspendidos.
+      .map((r) => ({ ...r, suspensionCandidate: r.overdueInvoices >= minOverdue && r.subscriber.serviceStatus !== 'suspended' }))
       .sort((a, b) => b.maxDaysPastDue - a.maxDaysPastDue || b.balance - a.balance);
     const total = r2(Object.values(totals).reduce((a, b) => a + b, 0));
     return {
@@ -261,6 +262,7 @@ export class ReceivablesService {
       overdue: r2(total - totals.current),
       subscribersWithDebt: rows.length,
       suspensionCandidates: rows.filter((r) => r.suspensionCandidate).length,
+      suspended: rows.filter((r) => r.subscriber.serviceStatus === 'suspended').length,
       rows,
     };
   }
@@ -311,15 +313,24 @@ class PaymentsController {
 @Controller('receivables')
 @TenantScoped()
 class ReceivablesController {
-  constructor(private readonly receivables: ReceivablesService) {}
+  constructor(
+    private readonly receivables: ReceivablesService,
+    private readonly collections: CollectionsService,
+  ) {}
 
   @Get()
-  report(@Query('asOf') asOf?: string, @Query('minOverdue') minOverdue?: string) {
+  async report(@Query('asOf') asOf?: string, @Query('minOverdue') minOverdue?: string) {
     const d = dateSchema.safeParse(asOf).success ? asOf! : today();
-    const m = Math.min(12, Math.max(1, Number(minOverdue) || 2));
+    // Sin parámetro, se usa el umbral configurado por el acueducto.
+    const m = Number(minOverdue) ? Math.min(12, Math.max(1, Number(minOverdue))) : (await this.collections.settings()).suspensionMinOverdue;
     return this.receivables.report(d, m);
   }
 }
 
-@Module({ controllers: [PaymentsController, ReceivablesController], providers: [PaymentsService, ReceivablesService], exports: [ReceivablesService] })
+@Module({
+  imports: [CollectionsModule],
+  controllers: [PaymentsController, ReceivablesController],
+  providers: [PaymentsService, ReceivablesService],
+  exports: [ReceivablesService],
+})
 export class ReceivablesModule {}
