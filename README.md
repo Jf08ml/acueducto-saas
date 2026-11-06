@@ -51,7 +51,13 @@ pnpm test     # incluye la prueba de aislamiento entre tenants contra la BD real
 
 - Modelo con `@@schema("tenant")`, `organizationId` y relación a `Organization`.
 - Índices y `@@unique` que empiecen por `organizationId`.
+- Si referencia otra tabla de tenant, declara la relación **compuesta** en `schema.prisma`:
+  `@relation(fields: [xId, organizationId], references: [id, organizationId], map: "..._same_org_fkey")`, más
+  `@@unique([id, organizationId])` en la tabla referenciada. No las agregues solo en SQL: Prisma intentaría borrarlas en la siguiente migración.
 - En la migración: `SELECT tenant.enable_rls('tenant.<tabla>');`
+- Si `prisma migrate dev` pide confirmación interactiva, genera el SQL con
+  `prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --script`,
+  revísalo y aplícalo con `prisma migrate deploy`.
 - Acceso solo vía `prisma.tenant` en rutas `@TenantScoped()`. Al crear, tomar `organizationId` de `currentContext()`, nunca del cuerpo de la petición.
 - La prueba "TODA tabla del esquema tenant tiene RLS" falla si olvidas el paso de RLS.
 
@@ -88,6 +94,25 @@ Después de registrarse, el acueducto completa estos pasos. Los dos primeros son
 - Se marcan para revisión: lectura menor a la anterior (no se factura consumo negativo), consumo cero y consumo mayor
   al doble del promedio (desviación significativa, Ley 142, art. 149).
 - No se puede corregir un período si ya hay lecturas posteriores o si el período ya se facturó (`locked`).
+
+### Facturación del agua
+
+Flujo: **Facturación → Facturar período → previsualización → Emitir**. Nada se guarda antes de emitir.
+
+- **Cálculo** (`computeInvoice` en `packages/shared/src/billing.ts`, con pruebas unitarias):
+  cargo fijo, consumo por rangos (básico hasta el consumo básico, complementario hasta el umbral suntuario
+  y suntuario por encima; el umbral es configurable y por defecto vale 2 × básico),
+  **subsidio** sobre cargo fijo y consumo básico (estratos 1 a 3) y **contribución** sobre todo el servicio
+  (estratos 5 y 6, comercial, industrial). Se redondea al peso. Los residenciales usan el factor de su estrato y los demás usos, el de su tipo.
+- **Medidores sin lectura:** por defecto la emisión se bloquea; también se puede facturar solo el cargo fijo.
+  A los suscriptores sin medidor se les cobra el aforo (m³) que se indique, o solo el cargo fijo.
+- **Emisión atómica:** todas las facturas del período se crean en una sola transacción con RLS (`tenantTransaction`).
+  La numeración es consecutiva por acueducto y las lecturas del período quedan bloqueadas.
+- **Copia de datos:** la factura guarda una copia de los datos del suscriptor y de la lectura. Editar al suscriptor después no la cambia.
+- **Anulación:** requiere motivo, solo es posible si ninguna factura tiene pagos, libera las lecturas y permite reemitir con números nuevos. Los anteriores no se reutilizan.
+- **Recibos:** `/facturacion/recibo?id=` y `/facturacion/recibos?p=AAAA-MM` (todos los del período), con la marca del acueducto,
+  historial de consumo y estilos de impresión. El PDF se obtiene con «Guardar como PDF» del navegador.
+- **Pendiente:** saldo anterior y cartera (módulo de recaudos), intereses de mora, facturación electrónica DIAN y PDF generado en el servidor.
 
 ### Planes y límites
 

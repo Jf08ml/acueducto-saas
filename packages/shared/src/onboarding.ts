@@ -99,4 +99,5 @@ export const SUBSCRIBER_IMPORT_COLUMNS = [
   { key: 'documentNumber', header: 'documento', required: true },
   { key: 'address', header: 'direccion', required: true },
   { key: 'stratum', header: 'estrato', required: false },
+  { key: 'usage', header: 'uso', required: false },
 ] as const;

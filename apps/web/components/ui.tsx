@@ -12,6 +12,9 @@ const paths: Record<string, ReactNode> = {
   logout: <path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H4" />,
   plus: <path d="M12 5v14M5 12h14" />,
   drop: <path d="M12 3.5s-6 6.6-6 11a6 6 0 0 0 12 0c0-4.4-6-11-6-11z" />,
+  receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6M9 16h3" /></>,
+  edit: <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16zM13.5 6.5l4 4" />,
+  printer: <><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" /><rect x="7" y="14" width="10" height="7" rx="1" /></>,
   building: <><rect x="4" y="3" width="16" height="18" rx="1.5" /><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1M10 21v-3h4v3" /></>,
 };
 
@@ -86,5 +89,15 @@ export function brandStyle(primaryColor?: string): React.CSSProperties | undefin
   return { ['--brand' as any]: primaryColor, ['--brand-contrast' as any]: contrastText(primaryColor) };
 }
 
-export const fmtNumber = (n: number | null | undefined, digits = 0) =>
+export const fmtMoney = (n: number | string | null | undefined) =>
+  n === null || n === undefined ? '—' : Number(n).toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+
+/** Error de la API como texto legible (primer problema de validación si lo hay). */
+export function errorText(e: any): string {
+  const issue = e?.body?.issues?.[0];
+  if (issue) return issue.message;
+  return e?.body?.message ?? e?.message ?? 'Ocurrió un error';
+}
+
+export const fmtNumber =(n: number | null | undefined, digits = 0) =>
   n === null || n === undefined ? '—' : n.toLocaleString('es-CO', { maximumFractionDigits: digits });

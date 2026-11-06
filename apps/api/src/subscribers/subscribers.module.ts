@@ -1,6 +1,6 @@
-import { Body, ConflictException, Controller, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { createSubscriberSchema, CreateSubscriberInput } from '@agua-mata/shared';
+import { createSubscriberSchema, CreateSubscriberInput, updateSubscriberSchema, UpdateSubscriberInput } from '@agua-mata/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { EntitlementsService } from '../entitlements/entitlements.service';
 import { AuditService } from '../audit/audit.service';
@@ -28,6 +28,15 @@ export class SubscribersService {
     const s = await this.prisma.tenant.subscriber.findUnique({ where: { id } });
     if (!s) throw new NotFoundException();
     return s;
+  }
+
+  /** Edición. El código no cambia (es la referencia en lecturas y facturas); las facturas ya emitidas guardan su copia. */
+  async update(id: string, input: UpdateSubscriberInput) {
+    const s = await this.prisma.tenant.subscriber.findUnique({ where: { id } });
+    if (!s) throw new NotFoundException();
+    const updated = await this.prisma.tenant.subscriber.update({ where: { id }, data: input });
+    await this.audit.log({ action: 'subscriber.updated', entity: 'subscriber', entityId: id, data: { changes: input as Prisma.InputJsonValue } });
+    return updated;
   }
 
   async create(input: CreateSubscriberInput) {
@@ -62,6 +71,12 @@ class SubscribersController {
   @Get(':id')
   get(@Param('id', ParseUUIDPipe) id: string) {
     return this.subscribers.get(id);
+  }
+
+  @Patch(':id')
+  @TenantScoped('owner', 'admin', 'operator')
+  update(@Param('id', ParseUUIDPipe) id: string, @Body(new ZodPipe(updateSubscriberSchema)) body: UpdateSubscriberInput) {
+    return this.subscribers.update(id, body);
   }
 
   @Post()

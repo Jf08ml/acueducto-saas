@@ -34,5 +34,16 @@ export const createSubscriberSchema = z.object({
   documentNumber: z.string().min(3),
   address: z.string().min(3),
   stratum: z.number().int().min(1).max(6).optional(),
+  usage: z.enum(['residencial', 'comercial', 'industrial', 'oficial']).default('residencial'),
 });
 export type CreateSubscriberInput = z.infer<typeof createSubscriberSchema>;
+
+export const updateSubscriberSchema = z.object({
+  fullName: z.string().min(3).optional(),
+  documentNumber: z.string().min(3).optional(),
+  address: z.string().min(3).optional(),
+  stratum: z.number().int().min(1).max(6).nullable().optional(),
+  usage: z.enum(['residencial', 'comercial', 'industrial', 'oficial']).optional(),
+  status: z.enum(['active', 'inactive']).optional(),
+});
+export type UpdateSubscriberInput = z.infer<typeof updateSubscriberSchema>;

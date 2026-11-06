@@ -74,7 +74,11 @@ export class ImportsService {
       if (Object.values(raw).every((v) => v === '')) return; // fila vacía
       totalRows++;
 
-      const candidate = { ...raw, stratum: raw.stratum === '' ? undefined : Number(raw.stratum) };
+      const candidate = {
+        ...raw,
+        stratum: raw.stratum === '' ? undefined : Number(raw.stratum),
+        usage: raw.usage === '' ? undefined : normalize(raw.usage),
+      };
       const parsed = createSubscriberSchema.safeParse(candidate);
       if (!parsed.success) {
         for (const i of parsed.error.issues) issues.push({ row: rowNumber, field: String(i.path[0] ?? ''), message: i.message });

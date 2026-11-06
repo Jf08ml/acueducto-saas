@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { tenantDefaultUrl } from '@agua-mata/shared';
 import { api, setToken } from '@/lib/api';
 import { PLATFORM_ORIGIN, usePlatformOnly } from '@/lib/host';
-import { Empty, fmtNumber, Icon, PageHeader, Stat } from '@/components/ui';
+import { Empty, errorText, fmtNumber, Icon, PageHeader, Stat } from '@/components/ui';
+import { ConfirmModal } from '@/components/modal';
 
 const ORG_STATUS: Record<string, [string, string]> = {
   onboarding: ['Configurando', 'badge-info'],
@@ -32,16 +33,25 @@ export default function AdminPage() {
   }, [router]);
   useEffect(() => { load(); }, [load]);
 
-  async function setStatus(id: string, status: string) {
-    const reason = prompt(`Motivo para cambiar el estado a "${status}" (queda en la auditoría):`);
-    if (!reason) return;
+  const [pending, setPending] = useState<{ org: any; status: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [modalError, setModalError] = useState('');
+
+  async function confirmStatus(reason: string) {
+    if (!pending) return;
+    setBusy(true);
+    setModalError('');
     try {
-      await api(`/platform/organizations/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, reason }) });
+      await api(`/platform/organizations/${pending.org.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: pending.status, reason }) });
+      setPending(null);
       load();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setModalError(errorText(e));
+    } finally {
+      setBusy(false);
     }
   }
+  const setStatus = (org: any, status: string) => { setModalError(''); setPending({ org, status }); };
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -93,8 +103,8 @@ export default function AdminPage() {
                           <td><span className={`badge ${cls}`}>{label}</span></td>
                           <td className="right">
                             {o.status === 'suspended'
-                              ? <button className="btn btn-secondary btn-sm" onClick={() => setStatus(o.id, 'active')}>Reactivar</button>
-                              : <button className="btn btn-secondary btn-sm" onClick={() => setStatus(o.id, 'suspended')}>Suspender</button>}
+                              ? <button className="btn btn-secondary btn-sm" onClick={() => setStatus(o, 'active')}>Reactivar</button>
+                              : <button className="btn btn-secondary btn-sm" onClick={() => setStatus(o, 'suspended')}>Suspender</button>}
                           </td>
                         </tr>
                       );
@@ -106,6 +116,20 @@ export default function AdminPage() {
           </section>
         </div>
       </div>
+      <ConfirmModal
+        open={pending !== null}
+        onClose={() => setPending(null)}
+        onConfirm={confirmStatus}
+        busy={busy}
+        error={modalError}
+        danger={pending?.status === 'suspended'}
+        title={pending?.status === 'suspended' ? 'Suspender acueducto' : 'Reactivar acueducto'}
+        confirmLabel={pending?.status === 'suspended' ? 'Suspender' : 'Reactivar'}
+        reasonLabel="Motivo (queda registrado en la auditoría)"
+        message={pending && (pending.status === 'suspended'
+          ? <p><strong>{pending.org.name}</strong> perderá el acceso a sus datos hasta que se reactive. No se borra nada.</p>
+          : <p><strong>{pending.org.name}</strong> recuperará el acceso a su cuenta.</p>)}
+      />
     </div>
   );
 }

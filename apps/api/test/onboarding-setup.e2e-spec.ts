@@ -125,7 +125,7 @@ describe('Asistente de configuración inicial', () => {
       .expect(200);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(res.body);
-    expect(wb.worksheets[0].getRow(1).values).toEqual([undefined, 'codigo', 'nombre_completo', 'documento', 'direccion', 'estrato']);
+    expect(wb.worksheets[0].getRow(1).values).toEqual([undefined, 'codigo', 'nombre_completo', 'documento', 'direccion', 'estrato', 'uso']);
   });
 
   it('importación: la validación reporta errores y no importa nada', async () => {

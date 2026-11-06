@@ -1,5 +1,5 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { currentContext } from '../common/request-context';
 
 /**
@@ -14,6 +14,22 @@ import { currentContext } from '../common/request-context';
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
   readonly platform = new PrismaClient();
   readonly tenant = buildTenantClient(this.platform);
+
+  /**
+   * Transacción interactiva con el tenant del contexto fijado al inicio: todas las consultas de `fn`
+   * quedan bajo RLS y se confirman o revierten juntas (p. ej. emitir una facturación completa).
+   */
+  async tenantTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>, timeoutMs = 120_000): Promise<T> {
+    const orgId = currentContext().organizationId;
+    if (!orgId) throw new Error('tenantTransaction requiere un tenant en el contexto');
+    return this.platform.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_org', ${orgId}, TRUE)`;
+        return fn(tx);
+      },
+      { timeout: timeoutMs, maxWait: 10_000 },
+    );
+  }
 
   async onModuleInit() {
     await this.platform.$connect();

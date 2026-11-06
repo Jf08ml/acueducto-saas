@@ -8,6 +8,7 @@ import {
 import { api, API_URL, apiDownload, apiUpload } from '@/lib/api';
 import { useMe } from '@/components/app-shell';
 import { PageHeader } from '@/components/ui';
+import { ConfirmModal, Modal } from '@/components/modal';
 
 const STEPS = [
   ['profile', 'Perfil regulatorio'],
@@ -127,10 +128,25 @@ function DomainStep({ enabled }: { enabled: boolean }) {
     }
   }
 
+  const [addOpen, setAddOpen] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [removing, setRemoving] = useState<any>(null);
+
   async function add(e: React.FormEvent) {
     e.preventDefault();
-    await act('add', () => api('/domains', { method: 'POST', body: JSON.stringify({ hostname }) }), () => 'Dominio agregado. Ahora crea los registros DNS y verifica.');
-    setHostname('');
+    setAddError('');
+    setBusy('add');
+    try {
+      await api('/domains', { method: 'POST', body: JSON.stringify({ hostname }) });
+      setAddOpen(false);
+      setHostname('');
+      setMsg({ kind: 'ok', text: 'Dominio agregado. Ahora crea los registros DNS y pulsa Verificar.' });
+      await load();
+    } catch (err) {
+      setAddError(errMsg(err));
+    } finally {
+      setBusy('');
+    }
   }
 
   if (!data) return <p className="muted">Cargando…</p>;
@@ -157,11 +173,32 @@ function DomainStep({ enabled }: { enabled: boolean }) {
         {!enabled ? (
           <div className="alert alert-info">Los dominios propios están disponibles desde el plan Profesional.</div>
         ) : (
-          <form className="row" onSubmit={add}>
-            <input placeholder="portal.miacueducto.org" value={hostname} onChange={(e) => setHostname(e.target.value)} style={{ maxWidth: 340 }} required />
-            <button className="btn" type="submit" disabled={busy === 'add'}>Agregar dominio</button>
-          </form>
+          <div><button className="btn" onClick={() => { setAddError(''); setAddOpen(true); }}>Agregar dominio propio</button></div>
         )}
+        <Modal
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+          title="Agregar dominio propio"
+          footer={<><button className="btn btn-secondary" onClick={() => setAddOpen(false)}>Cancelar</button><button className="btn" type="submit" form="domain-form" disabled={busy === 'add'}>Agregar</button></>}
+        >
+          <form id="domain-form" className="stack" onSubmit={add}>
+            <label className="field">Dominio o subdominio
+              <span className="hint">Recomendamos un subdominio, por ejemplo <code>portal.miacueducto.org</code>.</span>
+              <input placeholder="portal.miacueducto.org" value={hostname} onChange={(e) => setHostname(e.target.value)} required autoFocus />
+            </label>
+            <p className="small muted">Después te mostraremos los registros DNS que debes crear en tu proveedor de dominio.</p>
+            {addError && <div className="alert alert-danger">{addError}</div>}
+          </form>
+        </Modal>
+        <ConfirmModal
+          open={removing !== null}
+          onClose={() => setRemoving(null)}
+          danger
+          title="Quitar dominio"
+          confirmLabel="Quitar"
+          message={<p>Tu acueducto dejará de responder en <strong>{removing?.hostname}</strong>. Seguirá disponible en <code>{data.defaultUrl}</code>.</p>}
+          onConfirm={() => { const d = removing; setRemoving(null); act(d.id, () => api(`/domains/${d.id}`, { method: 'DELETE' })); }}
+        />
         {msg && <div className={`alert alert-${msg.kind}`}>{msg.text}</div>}
 
         {data.custom.map((d: any) => (
@@ -182,7 +219,7 @@ function DomainStep({ enabled }: { enabled: boolean }) {
                 {d.status === 'verified' && !d.isPrimary && (
                   <button className="btn btn-secondary btn-sm" onClick={() => act(d.id, () => api(`/domains/${d.id}/primary`, { method: 'POST' }))}>Hacer principal</button>
                 )}
-                <button className="btn btn-ghost btn-sm" onClick={() => confirm(`¿Quitar ${d.hostname}?`) && act(d.id, () => api(`/domains/${d.id}`, { method: 'DELETE' }))}>Quitar</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setRemoving(d)}>Quitar</button>
               </div>
             </div>
             {d.lastError && d.status !== 'verified' && <p className="small" style={{ color: 'var(--danger)' }}>{d.lastError}</p>}

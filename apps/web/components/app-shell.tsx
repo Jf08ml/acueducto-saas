@@ -27,6 +27,7 @@ const NAV = [
   { href: '/suscriptores', label: 'Suscriptores', icon: 'users' },
   { href: '/medidores', label: 'Medidores', icon: 'gauge' },
   { href: '/lecturas', label: 'Lecturas', icon: 'clipboard' },
+  { href: '/facturacion', label: 'Facturación', icon: 'receipt' },
   { href: '/configuracion', label: 'Configuración', icon: 'settings', adminOnly: true },
 ];
 
