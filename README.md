@@ -112,7 +112,24 @@ Flujo: **Facturación → Facturar período → previsualización → Emitir**. 
 - **Anulación:** requiere motivo, solo es posible si ninguna factura tiene pagos, libera las lecturas y permite reemitir con números nuevos. Los anteriores no se reutilizan.
 - **Recibos:** `/facturacion/recibo?id=` y `/facturacion/recibos?p=AAAA-MM` (todos los del período), con la marca del acueducto,
   historial de consumo y estilos de impresión. El PDF se obtiene con «Guardar como PDF» del navegador.
-- **Pendiente:** saldo anterior y cartera (módulo de recaudos), intereses de mora, facturación electrónica DIAN y PDF generado en el servidor.
+- **Saldo anterior:** al emitir, cada factura guarda lo que el suscriptor debía de facturas previas. El recibo lo muestra
+  y el «Total a pagar» lo incluye. Es informativo: la cartera se calcula siempre factura por factura, así no hay doble conteo.
+- **Pendiente:** intereses de mora, cargos de reconexión, facturación electrónica DIAN y PDF generado en el servidor.
+
+### Recaudo y cartera
+
+- **Pago:** se busca al suscriptor por la referencia del recibo (`código-número`), el código, el documento o el nombre.
+  El pago se abona primero a la factura más antigua (`allocateFifo`) y puede ser parcial. Cada pago recibe un comprobante con numeración consecutiva.
+  No se reciben anticipos: un pago mayor que la deuda se rechaza.
+- **Concurrencia:** pagos, anulaciones de pagos, emisión y anulación de facturación toman un bloqueo transaccional por acueducto
+  (`pg_advisory_xact_lock`). Dos cajeros no pueden aplicar dos veces la misma deuda ni repetir un número (hay una prueba con pagos simultáneos).
+- **Integridad en la BD:** montos positivos, `paid_amount` entre 0 y el total de la factura, y FK compuestas en las aplicaciones de pago.
+- **Anular un pago:** requiere motivo y devuelve el saldo a las facturas. Una facturación con abonos no se puede anular sin anular antes esos pagos.
+- **Cartera:** se calcula a una fecha de corte, por edades (corriente, 1–30, 31–60, 61–90, más de 90 días), con estado de cuenta por suscriptor.
+- **Lista de suspensión:** suscriptores con N o más facturas vencidas (N lo elige el acueducto). La Ley 142, art. 140
+  (modificado por la Ley 689 de 2001), fija el máximo en 3 períodos para facturación mensual y 2 para bimestral.
+
+### Planes y límites
 
 ### Planes y límites
 

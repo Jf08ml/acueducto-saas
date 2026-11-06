@@ -267,12 +267,23 @@ class DashboardController {
 
   @Get()
   async dashboard(@Query('period', periodQuery) period: string) {
-    const [subscribers, compliancePending, readingSummary] = await Promise.all([
+    const [y, m] = period.split('-').map(Number);
+    const monthStart = new Date(Date.UTC(y, m - 1, 1));
+    const monthEnd = new Date(Date.UTC(y, m, 0));
+    const [subscribers, compliancePending, readingSummary, collected, open] = await Promise.all([
       this.prisma.tenant.subscriber.count(),
       this.prisma.tenant.complianceItem.count({ where: { status: { in: ['pending', 'in_progress'] } } }),
       this.readings.summary(period),
+      this.prisma.tenant.payment.aggregate({ where: { status: 'applied', paidAt: { gte: monthStart, lte: monthEnd } }, _sum: { amount: true }, _count: true }),
+      this.prisma.tenant.invoice.aggregate({ where: { status: { in: ['issued', 'partial'] } }, _sum: { total: true, paidAmount: true } }),
     ]);
-    return { subscribers, compliancePending, readings: readingSummary };
+    return {
+      subscribers,
+      compliancePending,
+      readings: readingSummary,
+      collected: { amount: Number(collected._sum.amount ?? 0), count: collected._count },
+      receivables: Math.round((Number(open._sum.total ?? 0) - Number(open._sum.paidAmount ?? 0)) * 100) / 100,
+    };
   }
 }
 

@@ -90,10 +90,24 @@ export function Receipt({ issuer, invoice }: { issuer: Issuer; invoice: any }) {
         </tbody>
       </table>
 
+      {Number(invoice.previousBalance) > 0 && (
+        <table>
+          <tbody>
+            <tr><td>Valor de este período</td><td className="right mono">{fmtMoney(invoice.total)}</td></tr>
+            <tr><td><strong>Saldo anterior pendiente</strong> (facturas vencidas o por pagar)</td><td className="right mono"><strong>{fmtMoney(invoice.previousBalance)}</strong></td></tr>
+          </tbody>
+        </table>
+      )}
+
       <div className="r-total">
         <span>Total a pagar · antes del {date(invoice.dueDate)}</span>
-        <strong>{fmtMoney(invoice.total)}</strong>
+        <strong>{fmtMoney(Number(invoice.total) + Number(invoice.previousBalance ?? 0))}</strong>
       </div>
+      {Number(invoice.previousBalance) > 0 && (
+        <p className="small" style={{ color: '#b42318', margin: 0 }}>
+          Tienes saldo pendiente. Ponte al día para evitar la suspensión del servicio.
+        </p>
+      )}
 
       <footer className="r-foot">
         {issuer.branding.receiptFooter && <p>{issuer.branding.receiptFooter}</p>}

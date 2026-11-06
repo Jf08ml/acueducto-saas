@@ -14,6 +14,7 @@ import { AuditService } from '../audit/audit.service';
 import { ZodPipe } from '../common/zod.pipe';
 import { TenantScoped } from '../auth/decorators';
 import { currentContext } from '../common/request-context';
+import { lockMoney, OPEN_STATUSES } from '../receivables/receivables.module';
 
 const n = (d: Prisma.Decimal | number | null | undefined) => (d === null || d === undefined ? 0 : Number(d));
 
@@ -157,6 +158,15 @@ export class BillingService {
     const issueDate = new Date(input.issueDate);
     const dueDate = new Date(input.dueDate);
     const result = await this.prisma.tenantTransaction(async (tx) => {
+      await lockMoney(tx, organizationId!);
+      // Saldo anterior: lo que cada suscriptor debe de facturas previas al momento de emitir (se informa en el recibo).
+      const openPrev = await tx.invoice.findMany({
+        where: { status: { in: OPEN_STATUSES }, subscriberId: { in: drafts.map((d) => d.subscriberId) } },
+        select: { subscriberId: true, total: true, paidAmount: true },
+      });
+      const prevBy = new Map<string, number>();
+      for (const i of openPrev) prevBy.set(i.subscriberId, Math.round(((prevBy.get(i.subscriberId) ?? 0) + n(i.total) - n(i.paidAmount)) * 100) / 100);
+
       const periodData = {
         status: 'issued', tariffScheduleId: tariffRow.id, issueDate, dueDate, options: input.options as Prisma.InputJsonValue,
         invoiceCount: drafts.length, totalAmount: totals.total, subsidyAmount: totals.subsidy, contributionAmount: totals.contribution,
@@ -179,7 +189,7 @@ export class BillingService {
           issueDate, dueDate, subscriberSnapshot: d.subscriber as Prisma.InputJsonValue,
           readingSnapshot: { ...d.reading, history: histBy.get(d.subscriberId) ?? [] } as Prisma.InputJsonValue,
           consumptionM3: d.reading.consumptionM3, subtotal: d.calc.subtotal, subsidyAmount: d.calc.subsidy,
-          contributionAmount: d.calc.contribution, total: d.calc.total,
+          contributionAmount: d.calc.contribution, total: d.calc.total, previousBalance: prevBy.get(d.subscriberId) ?? 0,
         });
         d.calc.lines.forEach((l, i) =>
           lines.push({ organizationId: organizationId!, invoiceId: id, concept: l.concept, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, amount: l.amount, sortOrder: i }),
@@ -204,10 +214,12 @@ export class BillingService {
       where: { organizationId_period: { organizationId: currentContext().organizationId!, period } },
     });
     if (!bp || bp.status !== 'issued') throw new NotFoundException('No hay una facturación emitida para ese período');
-    const paid = await this.prisma.tenant.invoice.count({ where: { billingPeriodId: bp.id, status: 'paid' } });
-    if (paid) throw new ConflictException(`No se puede anular: ${paid} facturas ya tienen pagos`);
 
     await this.prisma.tenantTransaction(async (tx) => {
+      await lockMoney(tx, bp.organizationId);
+      // Dentro del bloqueo: ningún pago puede entrar entre esta verificación y la anulación.
+      const paid = await tx.invoice.count({ where: { billingPeriodId: bp.id, paidAmount: { gt: 0 } } });
+      if (paid) throw new ConflictException(`No se puede anular: ${paid} facturas tienen pagos o abonos. Anula primero esos pagos`);
       await tx.invoice.updateMany({ where: { billingPeriodId: bp.id, status: { not: 'void' } }, data: { status: 'void' } });
       await tx.meterReading.updateMany({ where: { period }, data: { locked: false } });
       await tx.billingPeriod.update({ where: { id: bp.id }, data: { status: 'voided', voidedAt: new Date(), voidReason: reason } });

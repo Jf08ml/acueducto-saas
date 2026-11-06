@@ -28,6 +28,8 @@ const NAV = [
   { href: '/medidores', label: 'Medidores', icon: 'gauge' },
   { href: '/lecturas', label: 'Lecturas', icon: 'clipboard' },
   { href: '/facturacion', label: 'Facturación', icon: 'receipt' },
+  { href: '/recaudo', label: 'Recaudo', icon: 'cash' },
+  { href: '/cartera', label: 'Cartera', icon: 'chart' },
   { href: '/configuracion', label: 'Configuración', icon: 'settings', adminOnly: true },
 ];
 

@@ -114,7 +114,7 @@ export default function PeriodoPage() {
                     <td className="right mono">{Number(i.subsidyAmount) ? fmtMoney(i.subsidyAmount) : '—'}</td>
                     <td className="right mono">{Number(i.contributionAmount) ? fmtMoney(i.contributionAmount) : '—'}</td>
                     <td className="right mono"><strong>{fmtMoney(i.total)}</strong></td>
-                    <td><span className={`badge ${i.status === 'void' ? 'badge-danger' : i.status === 'paid' ? 'badge-ok' : ''}`}>{i.status === 'void' ? 'Anulada' : i.status === 'paid' ? 'Pagada' : 'Emitida'}</span></td>
+                    <td><span className={`badge ${i.status === 'void' ? 'badge-danger' : i.status === 'paid' ? 'badge-ok' : i.status === 'partial' ? 'badge-warn' : ''}`}>{{ void: 'Anulada', paid: 'Pagada', partial: 'Abonada' }[i.status as string] ?? 'Emitida'}</span></td>
                     <td className="right"><a className="btn btn-secondary btn-sm" href={`/facturacion/recibo?id=${i.id}`}>Ver recibo</a></td>
                   </tr>
                 ))}

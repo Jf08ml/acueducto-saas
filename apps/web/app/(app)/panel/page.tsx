@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react';
 import { currentPeriod } from '@agua-mata/shared';
 import { api } from '@/lib/api';
 import { useMe } from '@/components/app-shell';
-import { fmtNumber, PageHeader, Stat } from '@/components/ui';
+import { fmtMoney, fmtNumber, PageHeader, Stat } from '@/components/ui';
 
 interface Dashboard {
   subscribers: number;
   compliancePending: number;
   readings: { period: string; activeMeters: number; read: number; pending: number; anomalies: Record<string, number>; totalM3: number };
+  collected: { amount: number; count: number };
+  receivables: number;
 }
 
 export default function PanelPage() {
@@ -44,6 +46,8 @@ export default function PanelPage() {
           progress={r && r.activeMeters ? r.read / r.activeMeters : undefined}
         />
         <Stat label="Consumo del período" value={r ? `${fmtNumber(r.totalM3, 1)} m³` : '—'} sub={r?.anomalies.estimated ? `${r.anomalies.estimated} estimadas` : undefined} />
+        <Stat label="Recaudo del mes" value={fmtMoney(data?.collected.amount)} sub={data ? `${fmtNumber(data.collected.count)} pagos` : undefined} />
+        <Stat label="Cartera pendiente" value={fmtMoney(data?.receivables)} sub={<a href="/cartera">Ver cartera</a>} />
         <Stat label="Para revisar" value={fmtNumber(anomalies)} sub="Lecturas con desviación o sin consumo" />
         <Stat label="Obligaciones pendientes" value={fmtNumber(data?.compliancePending)} sub={<a href="/configuracion?paso=compliance">Ver obligaciones</a>} />
       </div>
@@ -52,6 +56,7 @@ export default function PanelPage() {
         <h2>Accesos rápidos</h2>
         <div className="row">
           <a className="btn" href="/lecturas">Registrar lecturas</a>
+          <a className="btn btn-secondary" href="/recaudo">Registrar pago</a>
           <a className="btn btn-secondary" href="/suscriptores">Ver suscriptores</a>
           <a className="btn btn-secondary" href="/medidores">Instalar medidor</a>
         </div>

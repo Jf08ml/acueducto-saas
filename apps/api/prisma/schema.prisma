@@ -46,18 +46,20 @@ model Organization {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  memberships     Membership[]
-  subscriptions   Subscription[]
-  overrides       OrgEntitlementOverride[]
-  subscribers     Subscriber[]
-  complianceItems ComplianceItem[]
-  tariffSchedules TariffSchedule[]
-  domains         OrganizationDomain[]
-  meters          Meter[]
-  meterReadings   MeterReading[]
-  billingPeriods  BillingPeriod[]
-  invoices        Invoice[]
-  invoiceLines    InvoiceLine[]
+  memberships        Membership[]
+  subscriptions      Subscription[]
+  overrides          OrgEntitlementOverride[]
+  subscribers        Subscriber[]
+  complianceItems    ComplianceItem[]
+  tariffSchedules    TariffSchedule[]
+  domains            OrganizationDomain[]
+  meters             Meter[]
+  meterReadings      MeterReading[]
+  billingPeriods     BillingPeriod[]
+  invoices           Invoice[]
+  invoiceLines       InvoiceLine[]
+  payments           Payment[]
+  paymentAllocations PaymentAllocation[]
 
   @@map("organizations")
   @@schema("platform")
@@ -317,6 +319,7 @@ model Subscriber {
   meters       Meter[]
   readings     MeterReading[]
   invoices     Invoice[]
+  payments     Payment[]
 
   @@unique([id, organizationId], map: "subscribers_id_org_key")
   @@unique([organizationId, code])
@@ -433,12 +436,17 @@ model Invoice {
   subsidyAmount      Decimal  @default(0) @map("subsidy_amount") @db.Decimal(14, 2)
   contributionAmount Decimal  @default(0) @map("contribution_amount") @db.Decimal(14, 2)
   total              Decimal  @db.Decimal(14, 2)
+  /// Lo abonado a ESTA factura. Saldo = total - paidAmount. status: issued → partial → paid.
+  paidAmount         Decimal  @default(0) @map("paid_amount") @db.Decimal(14, 2)
+  /// Informativo: deuda de facturas anteriores al momento de emitir (se muestra en el recibo).
+  previousBalance    Decimal  @default(0) @map("previous_balance") @db.Decimal(14, 2)
   createdAt          DateTime @default(now()) @map("created_at")
 
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  billingPeriod BillingPeriod @relation(fields: [billingPeriodId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "invoices_period_same_org_fkey")
-  subscriber    Subscriber    @relation(fields: [subscriberId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "invoices_subscriber_same_org_fkey")
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  billingPeriod BillingPeriod       @relation(fields: [billingPeriodId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "invoices_period_same_org_fkey")
+  subscriber    Subscriber          @relation(fields: [subscriberId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "invoices_subscriber_same_org_fkey")
   lines         InvoiceLine[]
+  allocations   PaymentAllocation[]
 
   @@unique([id, organizationId], map: "invoices_id_org_key")
   @@unique([organizationId, number])
@@ -464,5 +472,52 @@ model InvoiceLine {
 
   @@index([organizationId, invoiceId])
   @@map("invoice_lines")
+  @@schema("tenant")
+}
+
+/// Pago recibido de un suscriptor (comprobante de pago). Se aplica a sus facturas pendientes, la más antigua primero.
+model Payment {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  subscriberId   String    @map("subscriber_id") @db.Uuid
+  number         Int // consecutivo de comprobante por acueducto
+  paidAt         DateTime  @map("paid_at") @db.Date
+  amount         Decimal   @db.Decimal(14, 2)
+  method         String // efectivo | transferencia | consignacion | pse | otro
+  reference      String?
+  notes          String?
+  status         String    @default("applied") // applied | void
+  receivedById   String?   @map("received_by_id") @db.Uuid
+  voidedAt       DateTime? @map("voided_at")
+  voidReason     String?   @map("void_reason")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subscriber   Subscriber          @relation(fields: [subscriberId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "payments_subscriber_same_org_fkey")
+  allocations  PaymentAllocation[]
+
+  @@unique([id, organizationId], map: "payments_id_org_key")
+  @@unique([organizationId, number])
+  @@index([organizationId, paidAt])
+  @@index([organizationId, subscriberId])
+  @@map("payments")
+  @@schema("tenant")
+}
+
+/// Parte de un pago aplicada a una factura.
+model PaymentAllocation {
+  id             String  @id @default(uuid()) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  paymentId      String  @map("payment_id") @db.Uuid
+  invoiceId      String  @map("invoice_id") @db.Uuid
+  amount         Decimal @db.Decimal(14, 2)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  payment      Payment      @relation(fields: [paymentId, organizationId], references: [id, organizationId], onDelete: Cascade, map: "allocations_payment_same_org_fkey")
+  invoice      Invoice      @relation(fields: [invoiceId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "allocations_invoice_same_org_fkey")
+
+  @@index([organizationId, paymentId])
+  @@index([organizationId, invoiceId])
+  @@map("payment_allocations")
   @@schema("tenant")
 }
