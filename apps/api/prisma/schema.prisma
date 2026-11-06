@@ -60,6 +60,7 @@ model Organization {
   invoiceLines       InvoiceLine[]
   payments           Payment[]
   paymentAllocations PaymentAllocation[]
+  invitations        Invitation[]
 
   @@map("organizations")
   @@schema("platform")
@@ -87,12 +88,13 @@ model OrganizationDomain {
 }
 
 model User {
-  id              String   @id @default(uuid()) @db.Uuid
-  email           String   @unique
-  fullName        String   @map("full_name")
-  passwordHash    String   @map("password_hash")
-  isPlatformAdmin Boolean  @default(false) @map("is_platform_admin")
-  createdAt       DateTime @default(now()) @map("created_at")
+  id              String    @id @default(uuid()) @db.Uuid
+  email           String    @unique
+  fullName        String    @map("full_name")
+  passwordHash    String    @map("password_hash")
+  isPlatformAdmin Boolean   @default(false) @map("is_platform_admin")
+  lastLoginAt     DateTime? @map("last_login_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   memberships Membership[]
 
@@ -105,6 +107,8 @@ model Membership {
   userId         String   @map("user_id") @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   role           String // owner | admin | operator | reader
+  /// active | disabled. Un acceso desactivado se rechaza en la siguiente petición (el guard revisa la BD).
+  status         String   @default("active")
   createdAt      DateTime @default(now()) @map("created_at")
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -112,6 +116,26 @@ model Membership {
 
   @@unique([userId, organizationId])
   @@map("memberships")
+  @@schema("platform")
+}
+
+/// Invitación de personal a un acueducto. Solo se guarda el hash del token; el enlace se muestra una vez.
+model Invitation {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  email          String
+  role           String
+  tokenHash      String    @unique @map("token_hash")
+  invitedById    String?   @map("invited_by_id") @db.Uuid
+  expiresAt      DateTime  @map("expires_at")
+  acceptedAt     DateTime? @map("accepted_at")
+  revokedAt      DateTime? @map("revoked_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, email])
+  @@map("invitations")
   @@schema("platform")
 }
 

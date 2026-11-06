@@ -6,3 +6,4 @@ export * from './domains';
 export * from './readings';
 export * from './billing';
 export * from './receivables';
+export * from './team';

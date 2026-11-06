@@ -28,6 +28,7 @@ export class TenantGuard implements CanActivate {
       include: { organization: { select: { status: true } } },
     });
     if (!membership) throw new ForbiddenException('Sin acceso a esta organización');
+    if (membership.status !== 'active') throw new ForbiddenException('Tu acceso a esta organización fue desactivado');
     if (BLOCKED_STATUSES.has(membership.organization.status)) {
       throw new ForbiddenException('La organización está suspendida o desactivada');
     }

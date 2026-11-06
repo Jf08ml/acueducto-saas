@@ -18,6 +18,8 @@ import { DomainsModule } from './domains/domains.module';
 import { MetersModule } from './meters/meters.module';
 import { BillingModule } from './billing/billing.module';
 import { ReceivablesModule } from './receivables/receivables.module';
+import { MailModule } from './mail/mail.service';
+import { TeamModule } from './team/team.module';
 
 @Controller('health')
 class HealthController {
@@ -33,7 +35,7 @@ function contextMiddleware(req: Request, _res: Response, next: NextFunction) {
 }
 
 @Module({
-  imports: [PrismaModule, AuditModule, AuthModule, EntitlementsModule, OnboardingModule, SubscribersModule, PlatformModule, MeModule, StorageModule, ComplianceModule, SetupModule, ImportsModule, DomainsModule, MetersModule, BillingModule, ReceivablesModule],
+  imports: [PrismaModule, AuditModule, AuthModule, EntitlementsModule, OnboardingModule, SubscribersModule, PlatformModule, MeModule, StorageModule, ComplianceModule, SetupModule, ImportsModule, DomainsModule, MetersModule, BillingModule, ReceivablesModule, MailModule, TeamModule],
   controllers: [HealthController],
 })
 export class AppModule implements NestModule {

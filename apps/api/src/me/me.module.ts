@@ -15,15 +15,22 @@ class MeController {
   @Get('organization')
   @TenantScoped()
   async organization() {
-    const { organizationId, role } = currentContext();
-    const org = await this.prisma.platform.organization.findUniqueOrThrow({
-      where: { id: organizationId! },
-      select: { id: true, name: true, slug: true, status: true, branding: true, municipality: true, department: true, onboardingCompletedAt: true },
-    });
+    const { organizationId, role, userId } = currentContext();
+    const [org, user, membership] = await Promise.all([
+      this.prisma.platform.organization.findUniqueOrThrow({
+        where: { id: organizationId! },
+        select: { id: true, name: true, slug: true, status: true, branding: true, municipality: true, department: true, onboardingCompletedAt: true },
+      }),
+      this.prisma.platform.user.findUniqueOrThrow({ where: { id: userId! }, select: { id: true, email: true, fullName: true } }),
+      this.prisma.platform.membership.findUniqueOrThrow({ where: { userId_organizationId: { userId: userId!, organizationId: organizationId! } }, select: { id: true } }),
+    ]);
     // No exponer claves internas de almacenamiento: solo colores, pie de recibo y si hay logo.
     const b = (org.branding ?? {}) as Record<string, string | undefined>;
     const branding = { primaryColor: b.primaryColor, secondaryColor: b.secondaryColor, receiptFooter: b.receiptFooter, hasLogo: Boolean(b.logoKey) };
-    return { organization: { ...org, branding }, role, entitlements: await this.entitlements.forOrganization(organizationId!) };
+    return {
+      organization: { ...org, branding }, role, user, membershipId: membership.id,
+      entitlements: await this.entitlements.forOrganization(organizationId!),
+    };
   }
 }
 
