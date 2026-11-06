@@ -129,7 +129,24 @@ Flujo: **Facturación → Facturar período → previsualización → Emitir**. 
 - **Lista de suspensión:** suscriptores con N o más facturas vencidas (N lo elige el acueducto). La Ley 142, art. 140
   (modificado por la Ley 689 de 2001), fija el máximo en 3 períodos para facturación mensual y 2 para bimestral.
 
-### Planes y límites
+### Usuarios del acueducto
+
+| Rol | Puede |
+|-----|-------|
+| Dueño | Todo, incluido gestionar a otros dueños. |
+| Administrador | Todo excepto gestionar dueños: configuración, facturación, anulaciones, usuarios. |
+| Operador | Suscriptores, medidores, lecturas y registrar pagos. No factura ni anula. |
+| Consulta | Solo ver. |
+
+- **Invitaciones** (`Usuarios → Invitar persona`): enlace de un solo uso que vence en 7 días. En la BD solo se guarda el hash SHA-256 del token.
+  El enlace apunta al dominio principal del acueducto (o a su subdominio).
+  Mientras no haya proveedor de correo (`MailService` solo registra en el log), la UI muestra el enlace para copiarlo o compartirlo por WhatsApp.
+  «Reenviar» genera un enlace nuevo y el anterior deja de servir.
+- **Aceptar:** quien no tiene cuenta la crea. Quien ya tiene cuenta (de otro acueducto) confirma con su contraseña y puede cambiar de acueducto desde el menú.
+- **Reglas:** nadie cambia su propio rol ni se desactiva o quita a sí mismo. Solo un dueño gestiona a otro dueño. Siempre queda al menos un dueño activo.
+- **Desactivar o quitar** a alguien corta el acceso en la siguiente petición: `TenantGuard` revisa la membresía en la BD, así que un token ya emitido no sirve.
+- **Límite del plan** `max_admin_users`: cuenta el personal activo más las invitaciones vigentes.
+- Cada usuario puede cambiar su contraseña desde el menú.
 
 ### Planes y límites
 
