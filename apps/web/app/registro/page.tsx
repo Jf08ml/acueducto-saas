@@ -42,7 +42,7 @@ export default function RegistroPage() {
       await api('/onboarding/organizations', { method: 'POST', body: JSON.stringify(parsed.data) });
       const login = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: f.ownerEmail, password: f.ownerPassword }) });
       setToken(login.accessToken);
-      router.push('/panel');
+      router.push('/configuracion');
     } catch (err: any) {
       setError(err.message);
     }

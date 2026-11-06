@@ -18,9 +18,12 @@ class MeController {
     const { organizationId, role } = currentContext();
     const org = await this.prisma.platform.organization.findUniqueOrThrow({
       where: { id: organizationId! },
-      select: { id: true, name: true, slug: true, status: true, branding: true, municipality: true, department: true },
+      select: { id: true, name: true, slug: true, status: true, branding: true, municipality: true, department: true, onboardingCompletedAt: true },
     });
-    return { organization: org, role, entitlements: await this.entitlements.forOrganization(organizationId!) };
+    // No exponer claves internas de almacenamiento: solo colores, pie de recibo y si hay logo.
+    const b = (org.branding ?? {}) as Record<string, string | undefined>;
+    const branding = { primaryColor: b.primaryColor, secondaryColor: b.secondaryColor, receiptFooter: b.receiptFooter, hasLogo: Boolean(b.logoKey) };
+    return { organization: { ...org, branding }, role, entitlements: await this.entitlements.forOrganization(organizationId!) };
   }
 }
 

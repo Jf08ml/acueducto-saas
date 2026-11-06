@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, setToken } from '@/lib/api';
+import { api, API_URL, setToken } from '@/lib/api';
 
 interface Me {
-  organization: { name: string; municipality: string; department: string; status: string };
+  organization: {
+    id: string; name: string; municipality: string; department: string; status: string; onboardingCompletedAt: string | null;
+    branding: { primaryColor?: string; hasLogo: boolean };
+  };
   role: string;
   entitlements: { planCode: string | null; subscriptionStatus: string | null; limits: Record<string, number> };
 }
@@ -46,11 +49,26 @@ export default function PanelPage() {
 
   return (
     <>
-      <header className="top">
-        <strong>{me?.organization.name ?? 'AguaMata'}</strong>
-        <button className="secondary" onClick={() => { setToken(null); router.push('/'); }}>Salir</button>
+      <header className="top" style={me?.organization.branding.primaryColor ? { borderBottom: `4px solid ${me.organization.branding.primaryColor}` } : undefined}>
+        <span className="row">
+          {me?.organization.branding.hasLogo && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={`${API_URL}/public/orgs/${me.organization.id}/logo`} alt="" style={{ height: 32 }} />
+          )}
+          <strong>{me?.organization.name ?? 'AguaMata'}</strong>
+        </span>
+        <span className="row">
+          {me && ['owner', 'admin'].includes(me.role) && <a href="/configuracion">Configuración</a>}
+          <button className="secondary" onClick={() => { setToken(null); router.push('/'); }}>Salir</button>
+        </span>
       </header>
       <main className="container stack">
+        {me && !me.organization.onboardingCompletedAt && ['owner', 'admin'].includes(me.role) && (
+          <div className="card row" style={{ justifyContent: 'space-between' }}>
+            <span>Tu acueducto aún no termina la configuración inicial (perfil regulatorio, tarifa, marca).</span>
+            <a href="/configuracion">Continuar configuración</a>
+          </div>
+        )}
         {me && (
           <p className="muted" style={{ margin: 0 }}>
             {me.organization.municipality}, {me.organization.department} · Plan <span className="badge">{me.entitlements.planCode}</span>{' '}

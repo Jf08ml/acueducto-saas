@@ -55,6 +55,16 @@ pnpm test     # incluye la prueba de aislamiento entre tenants contra la BD real
 - Acceso solo vía `prisma.tenant` en rutas `@TenantScoped()`. Al crear, tomar `organizationId` de `currentContext()`, nunca del cuerpo de la petición.
 - La prueba "TODA tabla del esquema tenant tiene RLS" falla si olvidas el paso de RLS.
 
+### Asistente de configuración inicial (`/configuracion`)
+
+Después de registrarse, el acueducto completa estos pasos. Los dos primeros son obligatorios para activar la cuenta.
+
+1. **Perfil regulatorio:** naturaleza jurídica, tipo de prestador (Ley 142, art. 15), zona, altitud y número de suscriptores.
+   Con estos datos se genera la lista de obligaciones a partir de `platform.regulatory_obligations`, un catálogo **orientativo** que debe validar un asesor.
+2. **Tarifa:** cargo fijo, valores por m³ (básico, complementario, suntuario), consumo básico sugerido según la altitud y subsidios y contribuciones por estrato, validados contra los topes legales.
+3. **Marca:** colores, pie de recibo y logo (PNG, JPG o WEBP; se revisa el tipo real del archivo, no solo la extensión).
+4. **Importación desde Excel:** plantilla descargable, revisión previa con reporte por fila e importación todo o nada que respeta el límite del plan.
+
 ### Planes y límites
 
 Los planes, módulos y límites viven en `platform.plans`, `plan_features`, `plan_limits` y `org_entitlement_overrides`.

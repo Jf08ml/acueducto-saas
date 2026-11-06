@@ -3,7 +3,6 @@
 
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
@@ -25,29 +24,34 @@ enum OrgStatus {
 }
 
 model Organization {
-  id                   String    @id @default(uuid()) @db.Uuid
-  slug                 String    @unique
-  name                 String
-  legalName            String    @map("legal_name")
-  nit                  String    @unique
-  nitDv                Int       @map("nit_dv")
-  department           String
-  municipality         String
-  organizationType     String    @map("organization_type")
-  legalNature          String?   @map("legal_nature")
-  providerType         String?   @map("provider_type")
-  estimatedSubscribers Int       @default(0) @map("estimated_subscribers")
-  contactEmail         String    @map("contact_email")
-  contactPhone         String    @map("contact_phone")
-  status               OrgStatus @default(onboarding)
-  branding             Json      @default("{}")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
+  id                    String    @id @default(uuid()) @db.Uuid
+  slug                  String    @unique
+  name                  String
+  legalName             String    @map("legal_name")
+  nit                   String    @unique
+  nitDv                 Int       @map("nit_dv")
+  department            String
+  municipality          String
+  organizationType      String    @map("organization_type")
+  legalNature           String?   @map("legal_nature")
+  providerType          String?   @map("provider_type")
+  areaType              String?   @map("area_type") // urbana | rural | mixta
+  altitudeMasl          Int?      @map("altitude_masl")
+  onboardingCompletedAt DateTime? @map("onboarding_completed_at")
+  estimatedSubscribers  Int       @default(0) @map("estimated_subscribers")
+  contactEmail          String    @map("contact_email")
+  contactPhone          String    @map("contact_phone")
+  status                OrgStatus @default(onboarding)
+  branding              Json      @default("{}")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  memberships   Membership[]
-  subscriptions Subscription[]
-  overrides     OrgEntitlementOverride[]
-  subscribers   Subscriber[]
+  memberships     Membership[]
+  subscriptions   Subscription[]
+  overrides       OrgEntitlementOverride[]
+  subscribers     Subscriber[]
+  complianceItems ComplianceItem[]
+  tariffSchedules TariffSchedule[]
 
   @@map("organizations")
   @@schema("platform")
@@ -202,7 +206,67 @@ model AuditLog {
   @@schema("platform")
 }
 
+/// Catálogo regulatorio (datos, no código). appliesTo define a quién aplica:
+/// { organizationTypes?, legalNatures?, providerTypes?, areaTypes?, minSubscribers?, maxSubscribers? }
+model RegulatoryObligation {
+  code        String   @id
+  title       String
+  description String
+  authority   String
+  legalBasis  String   @map("legal_basis")
+  frequency   String
+  appliesTo   Json     @default("{}") @map("applies_to")
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("regulatory_obligations")
+  @@schema("platform")
+}
+
 // ───────────────────────────── TENANT ─────────────────────────────
+
+/// Lista de obligaciones de cada acueducto, generada a partir de su perfil jurídico y regulatorio.
+model ComplianceItem {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  obligationCode String    @map("obligation_code")
+  status         String    @default("pending") // pending | in_progress | done | not_applicable
+  dueDate        DateTime? @map("due_date") @db.Date
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, obligationCode])
+  @@map("compliance_items")
+  @@schema("tenant")
+}
+
+/// Tarifa del servicio de acueducto. Valores en COP. stratumFactors: % por estrato/uso
+/// (negativo = subsidio, positivo = contribución), p. ej. { "1": -50, "2": -40, "5": 50 }.
+model TariffSchedule {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  name               String
+  effectiveFrom      DateTime @map("effective_from") @db.Date
+  billingPeriod      String   @map("billing_period") // monthly | bimonthly
+  basicConsumptionM3 Int      @map("basic_consumption_m3")
+  fixedCharge        Decimal  @map("fixed_charge") @db.Decimal(14, 2)
+  rateBasic          Decimal  @map("rate_basic") @db.Decimal(14, 2)
+  rateComplementary  Decimal  @map("rate_complementary") @db.Decimal(14, 2)
+  rateSumptuary      Decimal  @map("rate_sumptuary") @db.Decimal(14, 2)
+  stratumFactors     Json     @default("{}") @map("stratum_factors")
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, isActive])
+  @@map("tariff_schedules")
+  @@schema("tenant")
+}
 
 model Subscriber {
   id             String   @id @default(uuid()) @db.Uuid

@@ -6,3 +6,4 @@ dist/
 coverage/
 .env.local
 *.tsbuildinfo
+apps/api/storage/

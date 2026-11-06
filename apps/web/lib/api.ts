@@ -30,6 +30,32 @@ export class ApiError extends Error {
   }
 }
 
+export const API_URL = API;
+
+/** Sube un archivo (multipart). No fija Content-Type para que el navegador ponga el boundary. */
+export async function apiUpload<T = any>(path: string, file: File, field = 'file'): Promise<T> {
+  const fd = new FormData();
+  fd.append(field, file);
+  const token = getToken();
+  const res = await fetch(`${API}${path}`, { method: 'POST', body: fd, headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, body);
+  return body as T;
+}
+
+/** Descarga un archivo autenticado y lo ofrece al usuario. */
+export async function apiDownload(path: string, filename: string) {
+  const token = getToken();
+  const res = await fetch(`${API}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, null);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function api<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const res = await fetch(`${API}${path}`, {
