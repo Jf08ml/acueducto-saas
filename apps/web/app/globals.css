@@ -1,0 +1,44 @@
+:root {
+  --bg: #f5f8fa;
+  --surface: #ffffff;
+  --text: #13232f;
+  --muted: #5b6b78;
+  --border: #dbe3e9;
+  --primary: #0b6e99;
+  --primary-text: #ffffff;
+  --danger: #b42318;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e171d;
+    --surface: #15222b;
+    --text: #e6eef3;
+    --muted: #93a4b1;
+    --border: #26363f;
+    --primary: #3fa7d6;
+    --primary-text: #06141b;
+    --danger: #f97066;
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+a { color: var(--primary); }
+.container { max-width: 1040px; margin: 0 auto; padding: 24px 16px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+.narrow { max-width: 420px; margin: 8vh auto; }
+.stack { display: grid; gap: 12px; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.grid2 { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+input, select { padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+button { padding: 9px 14px; border: 0; border-radius: 6px; background: var(--primary); color: var(--primary-text); font: inherit; font-weight: 600; cursor: pointer; }
+button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.error { color: var(--danger); font-size: 14px; }
+.muted { color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); }
+header.top { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }

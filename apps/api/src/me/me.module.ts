@@ -1,0 +1,28 @@
+import { Controller, Get, Module } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { EntitlementsService } from '../entitlements/entitlements.service';
+import { TenantScoped } from '../auth/decorators';
+import { currentContext } from '../common/request-context';
+
+@Controller('me')
+class MeController {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly entitlements: EntitlementsService,
+  ) {}
+
+  /** Organización activa, su branding, el rol del usuario y lo que su plan permite. */
+  @Get('organization')
+  @TenantScoped()
+  async organization() {
+    const { organizationId, role } = currentContext();
+    const org = await this.prisma.platform.organization.findUniqueOrThrow({
+      where: { id: organizationId! },
+      select: { id: true, name: true, slug: true, status: true, branding: true, municipality: true, department: true },
+    });
+    return { organization: org, role, entitlements: await this.entitlements.forOrganization(organizationId!) };
+  }
+}
+
+@Module({ controllers: [MeController] })
+export class MeModule {}

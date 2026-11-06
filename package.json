@@ -1,0 +1,17 @@
+{
+  "name": "agua-mata",
+  "private": true,
+  "packageManager": "pnpm@10.22.0",
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "build": "pnpm --filter @agua-mata/shared build && pnpm -r --filter !@agua-mata/shared build",
+    "dev": "pnpm --filter @agua-mata/shared build && pnpm -r --parallel --filter !@agua-mata/shared dev",
+    "test": "pnpm --filter @agua-mata/shared build && pnpm -r test",
+    "db:migrate": "pnpm --filter @agua-mata/api prisma:migrate",
+    "db:seed": "pnpm --filter @agua-mata/api prisma:seed"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["prisma", "@prisma/client", "@prisma/engines", "@nestjs/core", "sharp", "unrs-resolver", "esbuild"]
+  }
+}

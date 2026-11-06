@@ -1,0 +1,225 @@
+// Esquema "platform": plano de control del SaaS (organizaciones, planes, suscripciones, auditoría).
+// Esquema "tenant": datos operativos de cada acueducto. TODA tabla aquí lleva organization_id y RLS.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+  schemas   = ["platform", "tenant"]
+}
+
+// ───────────────────────────── PLATFORM ─────────────────────────────
+
+enum OrgStatus {
+  onboarding
+  active
+  suspended
+  deactivated
+
+  @@schema("platform")
+}
+
+model Organization {
+  id                   String    @id @default(uuid()) @db.Uuid
+  slug                 String    @unique
+  name                 String
+  legalName            String    @map("legal_name")
+  nit                  String    @unique
+  nitDv                Int       @map("nit_dv")
+  department           String
+  municipality         String
+  organizationType     String    @map("organization_type")
+  legalNature          String?   @map("legal_nature")
+  providerType         String?   @map("provider_type")
+  estimatedSubscribers Int       @default(0) @map("estimated_subscribers")
+  contactEmail         String    @map("contact_email")
+  contactPhone         String    @map("contact_phone")
+  status               OrgStatus @default(onboarding)
+  branding             Json      @default("{}")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  memberships   Membership[]
+  subscriptions Subscription[]
+  overrides     OrgEntitlementOverride[]
+  subscribers   Subscriber[]
+
+  @@map("organizations")
+  @@schema("platform")
+}
+
+model User {
+  id              String   @id @default(uuid()) @db.Uuid
+  email           String   @unique
+  fullName        String   @map("full_name")
+  passwordHash    String   @map("password_hash")
+  isPlatformAdmin Boolean  @default(false) @map("is_platform_admin")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  memberships Membership[]
+
+  @@map("users")
+  @@schema("platform")
+}
+
+model Membership {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  role           String // owner | admin | operator | reader
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("memberships")
+  @@schema("platform")
+}
+
+model Plan {
+  id              String   @id @default(uuid()) @db.Uuid
+  code            String   @unique // free | basic | pro | advanced | custom_xxx
+  name            String
+  priceMonthlyCop Int      @default(0) @map("price_monthly_cop")
+  priceYearlyCop  Int      @default(0) @map("price_yearly_cop")
+  trialDays       Int      @default(0) @map("trial_days")
+  isPublic        Boolean  @default(true) @map("is_public")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  features      PlanFeature[]
+  limits        PlanLimit[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+  @@schema("platform")
+}
+
+model PlanFeature {
+  planId     String  @map("plan_id") @db.Uuid
+  featureKey String  @map("feature_key")
+  enabled    Boolean @default(true)
+  plan       Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@id([planId, featureKey])
+  @@map("plan_features")
+  @@schema("platform")
+}
+
+model PlanLimit {
+  planId   String @map("plan_id") @db.Uuid
+  limitKey String @map("limit_key")
+  value    Int // -1 = ilimitado
+  plan     Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@id([planId, limitKey])
+  @@map("plan_limits")
+  @@schema("platform")
+}
+
+/// Excepciones por organización (plan personalizado, promociones) sin crear un plan nuevo.
+model OrgEntitlementOverride {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  key            String // feature:<key> o limit:<key>
+  value          Int // feature: 0/1; limit: valor (-1 = ilimitado)
+  expiresAt      DateTime?    @map("expires_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@map("org_entitlement_overrides")
+  @@schema("platform")
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  suspended
+  cancelled
+
+  @@schema("platform")
+}
+
+model Subscription {
+  id                 String             @id @default(uuid()) @db.Uuid
+  organizationId     String             @map("organization_id") @db.Uuid
+  planId             String             @map("plan_id") @db.Uuid
+  status             SubscriptionStatus
+  billingCycle       String             @default("monthly") @map("billing_cycle")
+  trialEndsAt        DateTime?          @map("trial_ends_at")
+  currentPeriodStart DateTime           @map("current_period_start")
+  currentPeriodEnd   DateTime           @map("current_period_end")
+  graceEndsAt        DateTime?          @map("grace_ends_at")
+  cancelledAt        DateTime?          @map("cancelled_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         Plan         @relation(fields: [planId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("subscriptions")
+  @@schema("platform")
+}
+
+/// Acceso excepcional de soporte a datos de un tenant: solicitado, aprobado por el tenant, con TTL y auditado.
+model SupportAccessGrant {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  requestedById  String    @map("requested_by_id") @db.Uuid
+  approvedById   String?   @map("approved_by_id") @db.Uuid
+  reason         String
+  scope          String    @default("read")
+  status         String    @default("pending") // pending | approved | rejected | revoked
+  expiresAt      DateTime? @map("expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([organizationId, status])
+  @@map("support_access_grants")
+  @@schema("platform")
+}
+
+/// Bitácora append-only (UPDATE/DELETE revocados al rol de la app en la migración).
+model AuditLog {
+  id             BigInt   @id @default(autoincrement())
+  occurredAt     DateTime @default(now()) @map("occurred_at")
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  action         String
+  entity         String?
+  entityId       String?  @map("entity_id")
+  data           Json?
+  ip             String?
+
+  @@index([organizationId, occurredAt])
+  @@map("audit_logs")
+  @@schema("platform")
+}
+
+// ───────────────────────────── TENANT ─────────────────────────────
+
+model Subscriber {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  code           String
+  fullName       String   @map("full_name")
+  documentNumber String   @map("document_number")
+  address        String
+  stratum        Int?
+  status         String   @default("active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, code])
+  @@index([organizationId, documentNumber])
+  @@map("subscribers")
+  @@schema("tenant")
+}
