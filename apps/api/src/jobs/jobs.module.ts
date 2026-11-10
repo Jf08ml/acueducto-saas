@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import { Job, Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
-import { TenantScoped } from '../auth/decorators';
+import { PlatformAdmin, TenantScoped } from '../auth/decorators';
 import { currentContext, requestContext } from '../common/request-context';
 
 /** Varias instalaciones pueden compartir un Redis con nombres de cola distintos. */
@@ -189,10 +189,10 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
     });
   }
 
-  /** Estado de una tarea del acueducto actual. */
-  async get(id: string) {
+  /** Estado de una tarea del acueducto actual (o, con platform=true, de una tarea de plataforma sin acueducto). */
+  async get(id: string, platform = false) {
     const job = await this.prisma.platform.backgroundJob.findFirst({
-      where: { id, organizationId: currentContext().organizationId },
+      where: { id, organizationId: platform ? null : currentContext().organizationId },
       select: { id: true, type: true, status: true, progress: true, result: true, error: true, createdAt: true, finishedAt: true },
     });
     if (!job) throw new NotFoundException();
@@ -217,6 +217,18 @@ class JobsController {
   }
 }
 
+/** Tareas de plataforma (p. ej. la revisión diaria del cobro) para el superadmin. */
+@Controller('platform/jobs')
+@PlatformAdmin()
+class PlatformJobsController {
+  constructor(private readonly jobs: JobsService) {}
+
+  @Get(':id')
+  get(@Param('id', ParseUUIDPipe) id: string) {
+    return this.jobs.get(id, true);
+  }
+}
+
 @Global()
-@Module({ controllers: [JobsController], providers: [JobsService], exports: [JobsService] })
+@Module({ controllers: [JobsController, PlatformJobsController], providers: [JobsService], exports: [JobsService] })
 export class JobsModule {}

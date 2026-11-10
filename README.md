@@ -212,3 +212,27 @@ Se configuran en *Configuración → Cobro* (`collectionSettings` de la organiza
 
 Los planes, módulos y límites viven en `platform.plans`, `plan_features`, `plan_limits` y `org_entitlement_overrides`.
 En código se usa `EntitlementsService.assertFeature()` y `assertWithinLimit()`. Un plan nuevo es un cambio de datos, no de código.
+
+Por ahora hay **un solo plan**, `plataforma` («Plataforma completa»): todos los módulos y sin límites. Los planes anteriores quedan inactivos.
+
+### Cobro del SaaS a los acueductos
+
+Separado de la facturación del agua: `platform.saas_invoices`, `saas_payments` y `platform_settings`.
+
+- **Ciclo de vida:**
+  1. Al registrarse, el acueducto empieza una prueba (`trialing`, 30 días por defecto).
+  2. La factura del período siguiente se emite `invoiceLeadDays` antes del corte y se avisa por correo a dueños y administradores.
+  3. Si el período termina sin pago: `past_due` con `graceDays` de gracia.
+  4. Al acabar la gracia: `suspended` = **solo lectura**. Se puede consultar y exportar, pero toda petición que modifica datos responde 403 `SUBSCRIPTION_READ_ONLY`, salvo las de pago (`@AllowWhenReadOnly`). No se borra ni se oculta nada.
+  5. Al pagar: `active` hasta el fin del período facturado. Si estaba en solo lectura, el período nuevo arranca el día del pago.
+- La lógica de fechas es pura y tiene pruebas (`subscriptionActions`, `addCycle` en `packages/shared/src/saas.ts`).
+- La **revisión diaria** es una tarea programada (6:00 a. m., hora de Colombia) y es idempotente. El superadmin también la puede correr desde *Cobros*.
+- **Mercado Pago (Checkout Pro):** el acueducto paga en Mercado Pago y vuelve a `/suscripcion`.
+  - Un pago solo cuenta después de **consultarlo en la API** de Mercado Pago: aprobado, en COP, por el monto completo y con la referencia de esa factura.
+  - Llega por webhook (`POST /public/payments/mercadopago/webhook`, firma verificada con `MP_WEBHOOK_SECRET`) y también se confirma al volver, así funciona aunque el webhook no llegue (p. ej. en localhost).
+  - Idempotente: un mismo pago (`provider_payment_id` único) se registra una sola vez.
+- **Transferencia:** el acueducto ve la cuenta configurada y sube el comprobante (PNG, JPG o PDF, máx. 5 MB; se revisa el tipo real del archivo).
+  La factura queda «en revisión» y el superadmin la aprueba o la rechaza con motivo. Al acueducto se le avisa por correo.
+- **Superadmin** (`/admin/cobros`): editar el plan (precios y días de prueba), los plazos y la cuenta bancaria; revisar comprobantes; registrar un pago manual; anular facturas.
+  Desde *Organizaciones → Suscripción*, cambiar el ciclo (mensual o anual) o mover la fecha de corte (cortesía o activación manual), con motivo en la auditoría.
+- **Pendiente:** factura electrónica DIAN de la plataforma a los acueductos.

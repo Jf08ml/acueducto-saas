@@ -1,14 +1,14 @@
 import { Body, ConflictException, Controller, Injectable, Module, Post } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
-import { RESERVED_SLUGS, registerOrganizationSchema, RegisterOrganizationInput, tenantDefaultUrl } from '@agua-mata/shared';
+import { DEFAULT_PLAN_CODE, RESERVED_SLUGS, registerOrganizationSchema, RegisterOrganizationInput, tenantDefaultUrl } from '@agua-mata/shared';
 import { platformOrigin } from '../domains/domains.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { ZodPipe } from '../common/zod.pipe';
 import { Public } from '../auth/decorators';
 
-const TRIAL_PLAN_CODE = 'pro';
+const TRIAL_PLAN_CODE = DEFAULT_PLAN_CODE;
 
 function slugify(s: string) {
   return s

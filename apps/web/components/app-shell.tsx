@@ -16,6 +16,7 @@ export interface Me {
   user: { id: string; email: string; fullName: string };
   membershipId: string;
   entitlements: { planCode: string | null; subscriptionStatus: string | null; features: Record<string, boolean>; limits: Record<string, number> };
+  subscription: { status: string; trialEndsAt: string | null; currentPeriodEnd: string; graceEndsAt: string | null } | null;
 }
 
 const MeContext = createContext<{ me: Me; reload: () => Promise<void> } | null>(null);
@@ -35,6 +36,7 @@ const NAV = [
   { href: '/recaudo', label: 'Recaudo', icon: 'cash' },
   { href: '/cartera', label: 'Cartera', icon: 'chart' },
   { href: '/usuarios', label: 'Usuarios', icon: 'shield', adminOnly: true },
+  { href: '/suscripcion', label: 'Suscripción', icon: 'drop', adminOnly: true },
   { href: '/configuracion', label: 'Configuración', icon: 'settings', adminOnly: true },
 ];
 
@@ -74,7 +76,32 @@ function PasswordModal({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
-const STATUS_LABEL: Record<string, string> = { trialing: 'Prueba', active: 'Activo', past_due: 'Pago pendiente', suspended: 'Suspendido' };
+const STATUS_LABEL: Record<string, string> = { trialing: 'Prueba', active: 'Al día', past_due: 'Pago pendiente', suspended: 'Solo lectura' };
+const shortDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'long' }) : '');
+
+/** Aviso de la suscripción arriba de todas las páginas: prueba por terminar, pago pendiente o solo lectura. */
+function SubscriptionBanner({ me, pathname }: { me: Me; pathname: string }) {
+  const s = me.subscription;
+  if (!s || pathname.startsWith('/suscripcion')) return null;
+  const admin = isAdminRole(me.role);
+  const cta = admin ? <a className="btn btn-sm" href="/suscripcion">{s.status === 'trialing' ? 'Ver suscripción' : 'Pagar ahora'}</a> : null;
+  const daysLeft = Math.ceil((new Date(s.currentPeriodEnd).getTime() - Date.now()) / 86_400_000);
+  let text: string | null = null;
+  let tone = 'topbar';
+  if (s.status === 'suspended') {
+    text = admin
+      ? 'La cuenta está en modo de solo lectura por falta de pago: puedes consultar, pero no registrar cambios.'
+      : 'La cuenta está en modo de solo lectura por falta de pago. Pídele a un administrador que pague la suscripción.';
+    tone = 'topbar topbar-danger';
+  } else if (s.status === 'past_due') {
+    text = `La factura de AguaMata está vencida. Paga antes del ${shortDate(s.graceEndsAt)} para no perder la edición.`;
+    tone = 'topbar topbar-warn';
+  } else if (s.status === 'trialing' && daysLeft <= 7 && admin) {
+    text = daysLeft > 0 ? `Tu prueba termina en ${daysLeft} día${daysLeft === 1 ? '' : 's'} (${shortDate(s.currentPeriodEnd)}).` : 'Tu prueba terminó.';
+  }
+  if (!text) return null;
+  return <div className={tone} role="status"><span className="small">{text}</span>{cta}</div>;
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -149,6 +176,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </aside>
         <div className="main">
+          <SubscriptionBanner me={me} pathname={pathname} />
           {!me.organization.onboardingCompletedAt && isAdminRole(me.role) && !pathname.startsWith('/configuracion') && (
             <div className="topbar">
               <span className="small">Completa la configuración inicial para empezar a facturar.</span>

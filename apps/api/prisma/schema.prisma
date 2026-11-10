@@ -66,6 +66,8 @@ model Organization {
   serviceEvents      ServiceEvent[]
   invitations        Invitation[]
   backgroundJobs     BackgroundJob[]
+  saasInvoices       SaasInvoice[]
+  saasPayments       SaasPayment[]
 
   @@map("organizations")
   @@schema("platform")
@@ -201,6 +203,7 @@ model Plan {
   features      PlanFeature[]
   limits        PlanLimit[]
   subscriptions Subscription[]
+  saasInvoices  SaasInvoice[]
 
   @@map("plans")
   @@schema("platform")
@@ -265,11 +268,89 @@ model Subscription {
   cancelledAt        DateTime?          @map("cancelled_at")
   createdAt          DateTime           @default(now()) @map("created_at")
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  plan         Plan         @relation(fields: [planId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         Plan          @relation(fields: [planId], references: [id])
+  invoices     SaasInvoice[]
 
   @@index([organizationId, status])
   @@map("subscriptions")
+  @@schema("platform")
+}
+
+/// Factura del SaaS a un acueducto por un período de su suscripción. Distinta de las facturas del agua (tenant.invoices).
+model SaasInvoice {
+  id               String    @id @default(uuid()) @db.Uuid
+  /// Consecutivo global de la plataforma.
+  number           Int       @unique @default(autoincrement())
+  organizationId   String    @map("organization_id") @db.Uuid
+  subscriptionId   String    @map("subscription_id") @db.Uuid
+  planId           String    @map("plan_id") @db.Uuid
+  billingCycle     String    @map("billing_cycle") // monthly | yearly
+  periodStart      DateTime  @map("period_start")
+  periodEnd        DateTime  @map("period_end")
+  amountCop        Int       @map("amount_cop")
+  status           String    @default("pending") // pending | in_review | paid | void
+  dueDate          DateTime  @map("due_date")
+  paidAt           DateTime? @map("paid_at")
+  paymentMethod    String?   @map("payment_method") // mercadopago | transfer | manual
+  paymentReference String?   @map("payment_reference")
+  confirmedById    String?   @map("confirmed_by_id") @db.Uuid
+  voidedAt         DateTime? @map("voided_at")
+  voidReason       String?   @map("void_reason")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscription Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  plan         Plan          @relation(fields: [planId], references: [id])
+  payments     SaasPayment[]
+
+  @@index([organizationId, status])
+  @@index([status, dueDate])
+  @@map("saas_invoices")
+  @@schema("platform")
+}
+
+/// Intento o registro de pago de una factura del SaaS: Mercado Pago, transferencia reportada o registro manual.
+model SaasPayment {
+  id                   String    @id @default(uuid()) @db.Uuid
+  invoiceId            String    @map("invoice_id") @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  method               String // mercadopago | transfer | manual
+  status               String    @default("pending") // pending | in_review | approved | rejected
+  amountCop            Int       @map("amount_cop")
+  /// id del pago en Mercado Pago (único: el webhook puede llegar varias veces).
+  providerPaymentId    String?   @unique @map("provider_payment_id")
+  providerPreferenceId String?   @map("provider_preference_id")
+  providerStatus       String?   @map("provider_status")
+  reference            String?
+  paidAt               DateTime? @map("paid_at")
+  /// Comprobante de transferencia en el almacenamiento (nunca se expone la clave).
+  proofKey             String?   @map("proof_key")
+  proofType            String?   @map("proof_type")
+  notes                String?
+  reviewedById         String?   @map("reviewed_by_id") @db.Uuid
+  reviewedAt           DateTime? @map("reviewed_at")
+  rejectReason         String?   @map("reject_reason")
+  createdById          String?   @map("created_by_id") @db.Uuid
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  invoice      SaasInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([status, method])
+  @@map("saas_payments")
+  @@schema("platform")
+}
+
+/// Configuración de la plataforma (datos, no código): días de gracia, cuenta para transferencias…
+model PlatformSetting {
+  key         String   @id
+  value       Json
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
   @@schema("platform")
 }
 

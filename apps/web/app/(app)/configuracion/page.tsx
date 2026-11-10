@@ -237,7 +237,7 @@ function DomainStep({ enabled }: { enabled: boolean }) {
           y luego pulsa <strong>Verificar</strong>. Los cambios de DNS pueden tardar hasta unas horas.
         </p>
         {!enabled ? (
-          <div className="alert alert-info">Los dominios propios están disponibles desde el plan Profesional.</div>
+          <div className="alert alert-info">Tu plan no incluye dominios propios.</div>
         ) : (
           <div><button className="btn" onClick={() => { setAddError(''); setAddOpen(true); }}>Agregar dominio propio</button></div>
         )}

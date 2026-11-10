@@ -41,6 +41,7 @@ export class PlatformService {
       plan: o.subscriptions[0]?.plan ?? null,
       subscriptionStatus: o.subscriptions[0]?.status ?? null,
       currentPeriodEnd: o.subscriptions[0]?.currentPeriodEnd ?? null,
+      billingCycle: o.subscriptions[0]?.billingCycle ?? null,
       subscriberCount: byOrg.get(o.id) ?? 0,
       createdAt: o.createdAt,
     }));

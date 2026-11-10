@@ -27,9 +27,14 @@ class MeController {
     // No exponer claves internas de almacenamiento: solo colores, pie de recibo y si hay logo.
     const b = (org.branding ?? {}) as Record<string, string | undefined>;
     const branding = { primaryColor: b.primaryColor, secondaryColor: b.secondaryColor, receiptFooter: b.receiptFooter, hasLogo: Boolean(b.logoKey) };
+    const sub = await this.prisma.platform.subscription.findFirst({
+      where: { organizationId: organizationId! }, orderBy: { createdAt: 'desc' },
+      select: { status: true, trialEndsAt: true, currentPeriodEnd: true, graceEndsAt: true },
+    });
     return {
       organization: { ...org, branding }, role, user, membershipId: membership.id,
       entitlements: await this.entitlements.forOrganization(organizationId!),
+      subscription: sub,
     };
   }
 }

@@ -69,11 +69,11 @@ export interface JobStatus<R = any> {
 }
 
 /** Espera a que termine una tarea en segundo plano, informando el avance. Lanza ApiError si falla. */
-export async function waitForJob<R = any>(id: string, onProgress?: (job: JobStatus<R>) => void, timeoutMs = 15 * 60_000): Promise<R> {
+export async function waitForJob<R = any>(id: string, onProgress?: (job: JobStatus<R>) => void, timeoutMs = 15 * 60_000, base = '/jobs'): Promise<R> {
   const started = Date.now();
   let delay = 400;
   for (;;) {
-    const job = await api<JobStatus<R>>(`/jobs/${id}`);
+    const job = await api<JobStatus<R>>(`${base}/${id}`);
     onProgress?.(job);
     if (job.status === 'done') return job.result as R;
     if (job.status === 'failed') throw new ApiError(422, { message: job.error ?? 'La tarea falló' });
@@ -81,4 +81,18 @@ export async function waitForJob<R = any>(id: string, onProgress?: (job: JobStat
     await new Promise((r) => setTimeout(r, delay));
     delay = Math.min(delay * 1.5, 3000);
   }
+}
+
+/** Abre en otra pestaña un archivo autenticado (p. ej. un comprobante), sin exponer la sesión en la URL. */
+export async function apiOpen(path: string) {
+  const tab = window.open('', '_blank');
+  const res = await fetch(`${API}${path}`, { credentials: 'same-origin' });
+  if (!res.ok) {
+    tab?.close();
+    throw new ApiError(res.status, await res.json().catch(() => null));
+  }
+  const url = URL.createObjectURL(await res.blob());
+  if (tab) tab.location.href = url;
+  else window.location.href = url;
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

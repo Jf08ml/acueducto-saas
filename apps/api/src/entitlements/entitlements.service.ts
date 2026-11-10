@@ -9,7 +9,8 @@ export interface Entitlements {
   limits: Record<string, number>; // -1 = ilimitado
 }
 
-const USABLE_STATUSES = ['trialing', 'active', 'past_due'] as const;
+/** En solo lectura (suspended) se conservan los módulos para consultar; las escrituras las bloquea el TenantGuard. */
+const USABLE_STATUSES = ['trialing', 'active', 'past_due', 'suspended'] as const;
 
 /**
  * Lo que una organización puede hacer = plan de su suscripción vigente + overrides no vencidos.

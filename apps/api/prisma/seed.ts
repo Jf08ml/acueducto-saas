@@ -11,7 +11,15 @@ const prisma = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL
 const ALL = ['subscribers', 'meters', 'billing', 'payments', 'receivables', 'accounting', 'documents', 'reports', 'automations', 'integrations', 'excel_import', 'custom_domain'];
 const CORE = ['subscribers', 'meters', 'billing', 'payments', 'receivables', 'reports'];
 
-const PLANS = [
+/**
+ * Por ahora hay UN solo plan con toda la plataforma. Los planes anteriores se conservan inactivos
+ * (pueden tener historial) y se pueden reactivar como datos si algún día se vuelve a vender por niveles.
+ */
+const UNLIMITED = { max_subscribers: -1, max_admin_users: -1, storage_mb: -1, documents_per_month: -1, automations: -1, integrations: -1 };
+const PLANS: { code: string; name: string; monthly: number; yearly: number; trialDays: number; isPublic?: boolean; isActive?: boolean; features: string[]; limits: Record<string, number> }[] = [
+  { code: 'plataforma', name: 'Plataforma completa', monthly: 150_000, yearly: 1_500_000, trialDays: 30, features: ALL, limits: UNLIMITED },
+];
+const LEGACY_PLANS = [
   { code: 'free', name: 'Gratuito', monthly: 0, yearly: 0, trialDays: 0, features: CORE,
     limits: { max_subscribers: 50, max_admin_users: 1, storage_mb: 100, documents_per_month: 100, automations: 0, integrations: 0 } },
   { code: 'basic', name: 'Básico', monthly: 89_000, yearly: 890_000, trialDays: 30, features: [...CORE, 'documents', 'excel_import'],
@@ -23,6 +31,7 @@ const PLANS = [
   { code: 'custom', name: 'Personalizado', monthly: 0, yearly: 0, trialDays: 0, isPublic: false, features: ALL,
     limits: { max_subscribers: -1, max_admin_users: -1, storage_mb: -1, documents_per_month: -1, automations: -1, integrations: -1 } },
 ];
+void LEGACY_PLANS;
 
 /**
  * Catálogo regulatorio ORIENTATIVO. Debe validarlo un asesor en servicios públicos antes de salir a producción.
@@ -83,7 +92,7 @@ async function main() {
     const plan = await prisma.plan.upsert({
       where: { code: p.code },
       update: {},
-      create: { code: p.code, name: p.name, priceMonthlyCop: p.monthly, priceYearlyCop: p.yearly, trialDays: p.trialDays, isPublic: p.isPublic ?? true },
+      create: { code: p.code, name: p.name, priceMonthlyCop: p.monthly, priceYearlyCop: p.yearly, trialDays: p.trialDays, isPublic: p.isPublic ?? true, isActive: p.isActive ?? true },
     });
     for (const f of ALL) {
       await prisma.planFeature.upsert({
@@ -100,6 +109,8 @@ async function main() {
       });
     }
   }
+
+  await prisma.plan.updateMany({ where: { code: { notIn: PLANS.map((p) => p.code) } }, data: { isActive: false, isPublic: false } });
 
   const email = (process.env.SUPERADMIN_EMAIL ?? 'admin@aguamata.local').toLowerCase();
   const password = process.env.SUPERADMIN_PASSWORD ?? 'Admin12345!';

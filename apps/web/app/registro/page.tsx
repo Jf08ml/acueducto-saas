@@ -55,7 +55,7 @@ export default function RegistroPage() {
     <main className="content" style={{ margin: '0 auto', maxWidth: 820 }}>
       <form className="card stack" onSubmit={submit}>
         <h1 style={{ margin: 0 }}>Registra tu acueducto</h1>
-        <p className="muted" style={{ margin: 0 }}>30 días de prueba del plan Profesional, sin tarjeta.</p>
+        <p className="muted" style={{ margin: 0 }}>30 días de prueba con toda la plataforma, sin tarjeta.</p>
         <h3 style={{ marginTop: 8 }}>Datos de la organización</h3>
         <div className="grid2">
           <label className="field">Nombre del acueducto<input value={f.name} onChange={set('name')} required /></label>
