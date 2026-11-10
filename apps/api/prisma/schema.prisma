@@ -69,6 +69,8 @@ model Organization {
   saasInvoices       SaasInvoice[]
   saasPayments       SaasPayment[]
   supportGrants      SupportAccessGrant[]
+  einvoiceConfig     EInvoiceConfig?
+  einvoiceDocuments  EInvoiceDocument[]
 
   @@map("organizations")
   @@schema("platform")
@@ -639,9 +641,10 @@ model Invoice {
   organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   billingPeriod BillingPeriod       @relation(fields: [billingPeriodId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "invoices_period_same_org_fkey")
   subscriber    Subscriber          @relation(fields: [subscriberId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "invoices_subscriber_same_org_fkey")
-  lines         InvoiceLine[]
-  allocations   PaymentAllocation[]
-  charges       SubscriberCharge[]
+  lines              InvoiceLine[]
+  allocations        PaymentAllocation[]
+  charges            SubscriberCharge[]
+  electronicDocument EInvoiceDocument?
 
   @@unique([id, organizationId], map: "invoices_id_org_key")
   @@unique([organizationId, number])
@@ -761,5 +764,66 @@ model ServiceEvent {
 
   @@index([organizationId, subscriberId, date])
   @@map("service_events")
+  @@schema("tenant")
+}
+
+/// Configuración de facturación electrónica del acueducto (BASE: hoy solo proveedor simulado).
+/// La clave técnica se guarda cifrada (AES-256-GCM) y la API nunca la devuelve.
+model EInvoiceConfig {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @unique @map("organization_id") @db.Uuid
+  enabled               Boolean  @default(false)
+  provider              String   @default("simulated")
+  environment           String   @default("habilitacion") // habilitacion | produccion
+  documentType          String   @default("documento_equivalente_spd") @map("document_type")
+  resolutionNumber      String   @map("resolution_number")
+  resolutionDate        DateTime @map("resolution_date") @db.Date
+  prefix                String   @default("")
+  rangeFrom             Int      @map("range_from")
+  rangeTo               Int      @map("range_to")
+  validFrom             DateTime @map("valid_from") @db.Date
+  validTo               DateTime @map("valid_to") @db.Date
+  technicalKeyEncrypted String?  @map("technical_key_encrypted")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@map("einvoice_configs")
+  @@schema("tenant")
+}
+
+/// Documento electrónico de una factura del agua: número autorizado, documento neutro enviado al proveedor,
+/// respuesta y código único (CUFE/CUDE). Una por factura.
+model EInvoiceDocument {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  invoiceId      String    @map("invoice_id") @db.Uuid
+  period         String
+  documentType   String    @map("document_type")
+  environment    String
+  provider       String
+  prefix         String
+  number         Int
+  /// pending | accepted | rejected | error | void | requires_credit_note
+  status         String    @default("pending")
+  documentKey    String?   @map("document_key") // CUFE / CUDE
+  qrUrl          String?   @map("qr_url")
+  providerRef    String?   @map("provider_ref")
+  payload        Json
+  response       Json?
+  attempts       Int       @default(0)
+  lastError      String?   @map("last_error")
+  sentAt         DateTime? @map("sent_at")
+  acceptedAt     DateTime? @map("accepted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  invoice      Invoice      @relation(fields: [invoiceId, organizationId], references: [id, organizationId], onDelete: Restrict, map: "einvoice_documents_invoice_same_org_fkey")
+
+  @@unique([invoiceId, organizationId])
+  @@unique([organizationId, prefix, number])
+  @@index([organizationId, period, status])
+  @@map("einvoice_documents")
   @@schema("tenant")
 }

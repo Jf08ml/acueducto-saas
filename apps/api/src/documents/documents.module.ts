@@ -44,12 +44,18 @@ export class DocumentsService implements OnModuleInit {
     };
   }
 
-  private invoiceQuery = { include: { lines: { orderBy: { sortOrder: 'asc' as const } } } };
+  private invoiceQuery = { include: { lines: { orderBy: { sortOrder: 'asc' as const } }, electronicDocument: { select: { status: true, documentKey: true, prefix: true, number: true } } } };
+
+  /** El recibo impreso lleva el número y el código del documento electrónico cuando fue aceptado. */
+  private withElectronic<T extends { electronicDocument: { status: string; documentKey: string | null; prefix: string; number: number } | null }>(inv: T) {
+    const e = inv.electronicDocument;
+    return { ...inv, electronic: e && e.status === 'accepted' ? { cufe: e.documentKey, status: e.status, number: `${e.prefix}${e.number}` } : null };
+  }
 
   async invoicePdf(id: string) {
     const inv = await this.prisma.tenant.invoice.findUnique({ where: { id }, ...this.invoiceQuery });
     if (!inv) throw new NotFoundException();
-    const pdf = await renderReceiptsPdf(await this.issuer(), [inv]);
+    const pdf = await renderReceiptsPdf(await this.issuer(), [this.withElectronic(inv)]);
     return { pdf, name: `recibo-${inv.period}-${inv.number}.pdf` };
   }
 
@@ -68,7 +74,7 @@ export class DocumentsService implements OnModuleInit {
       ...this.invoiceQuery,
     });
     let last = 0;
-    const pdf = await renderReceiptsPdf(await this.issuer(), invoices, (n) => {
+    const pdf = await renderReceiptsPdf(await this.issuer(), invoices.map((i) => this.withElectronic(i)), (n) => {
       const pct = Math.floor((n / Math.max(1, invoices.length)) * 90);
       if (pct >= last + 10) { last = pct; void job.progress(pct); }
     });

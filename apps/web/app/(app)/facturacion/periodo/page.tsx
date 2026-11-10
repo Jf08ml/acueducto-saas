@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { isAdminRole, useMe } from '@/components/app-shell';
 import { ConfirmModal, Modal } from '@/components/modal';
 import { AnomalyBadge, errorText, fmtMoney, fmtNumber, Icon, PageHeader, Stat } from '@/components/ui';
+import { EInvoicePanel } from '@/components/einvoice-panel';
 
 const addDays = (d: string, n: number) => {
   const x = new Date(`${d}T00:00:00Z`);
@@ -101,6 +102,7 @@ export default function PeriodoPage() {
           <Stat label="Subsidios" value={fmtMoney(issued.subsidyAmount)} />
           <Stat label="Contribuciones" value={fmtMoney(issued.contributionAmount)} />
         </div>
+        {canBill && <EInvoicePanel period={issued.period} />}
         <section className="card card-flush">
           <div className="table-wrap">
             <table>

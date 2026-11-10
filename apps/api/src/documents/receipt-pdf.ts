@@ -34,7 +34,7 @@ export interface PdfInvoice {
   readingSnapshot: any;
   lines: { concept: string; description: string; quantity: unknown; unitPrice: unknown; amount: unknown }[];
   /** Si existe (facturación electrónica), se imprime con el código de validación. */
-  electronic?: { cufe?: string | null; status?: string | null } | null;
+  electronic?: { cufe?: string | null; status?: string | null; number?: string | null } | null;
 }
 
 const OBS = Object.fromEntries(READING_OBSERVATIONS) as Record<string, string>;
@@ -232,7 +232,7 @@ function drawReceipt(doc: PDFKit.PDFDocument, issuer: PdfIssuer, inv: PdfInvoice
   }
   doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(pdfText(`Ref. de pago: ${s.code ?? ''}-${inv.number}`), left, y, { width });
   if (inv.electronic?.cufe) {
-    doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(`CUFE/CUDE: ${inv.electronic.cufe}`, left, doc.y + 4, { width });
+    doc.font('Helvetica').fontSize(7).fillColor(MUTED).text(`Documento electrónico ${inv.electronic.number ?? ''} · CUFE/CUDE: ${inv.electronic.cufe}`, left, doc.y + 4, { width });
   }
 
   if (inv.status === 'void') {

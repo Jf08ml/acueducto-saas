@@ -1,5 +1,5 @@
 import {
-  BadRequestException, Body, ConflictException, Controller, Get, Injectable, Module, NotFoundException, Param, ParseUUIDPipe, Post,
+  BadRequestException, Body, ConflictException, Controller, Get, Injectable, Logger, Module, NotFoundException, Param, ParseUUIDPipe, Post,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
@@ -15,6 +15,7 @@ import { ZodPipe } from '../common/zod.pipe';
 import { TenantScoped } from '../auth/decorators';
 import { currentContext } from '../common/request-context';
 import { lockMoney, OPEN_STATUSES } from '../common/money';
+import { EInvoiceModule, EInvoiceService } from '../einvoice/einvoice.module';
 
 const n = (d: Prisma.Decimal | number | null | undefined) => (d === null || d === undefined ? 0 : Number(d));
 
@@ -34,10 +35,13 @@ interface DraftInvoice {
 
 @Injectable()
 export class BillingService {
+  private readonly log = new Logger('Billing');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly entitlements: EntitlementsService,
     private readonly audit: AuditService,
+    private readonly einvoice: EInvoiceService,
   ) {}
 
   private async activeTariff() {
@@ -262,7 +266,14 @@ export class BillingService {
       action: 'billing.issued', entity: 'billing_period', entityId: result.billingPeriodId,
       data: { period: input.period, invoices: drafts.length, total: totals.total, numbers: `${result.firstNumber}-${result.lastNumber}` },
     });
-    return { ...result, invoices: drafts.length, total: totals.total };
+    // Facturación electrónica (si está activa): se encola; un fallo allí nunca deshace la emisión.
+    let einvoiceJobId: string | null = null;
+    try {
+      einvoiceJobId = (await this.einvoice.periodIssued(input.period))?.id ?? null;
+    } catch (e: any) {
+      this.log.error(`No se pudo encolar la facturación electrónica de ${input.period}: ${e?.message ?? e}`);
+    }
+    return { ...result, invoices: drafts.length, total: totals.total, einvoiceJobId };
   }
 
   async voidPeriod(period: string, reason: string) {
@@ -284,6 +295,7 @@ export class BillingService {
       await tx.billingPeriod.update({ where: { id: bp.id }, data: { status: 'voided', voidedAt: new Date(), voidReason: reason } });
     });
     await this.audit.log({ action: 'billing.voided', entity: 'billing_period', entityId: bp.id, data: { period, reason } });
+    await this.einvoice.periodVoided(period);
     return { ok: true };
   }
 
@@ -316,7 +328,7 @@ export class BillingService {
   }
 
   async invoice(id: string) {
-    const inv = await this.prisma.tenant.invoice.findUnique({ where: { id }, include: { lines: { orderBy: { sortOrder: 'asc' } } } });
+    const inv = await this.prisma.tenant.invoice.findUnique({ where: { id }, include: { lines: { orderBy: { sortOrder: 'asc' } }, electronicDocument: { select: ELECTRONIC_SELECT } } });
     if (!inv) throw new NotFoundException();
     return { issuer: await this.issuer(), invoices: [inv] };
   }
@@ -326,7 +338,7 @@ export class BillingService {
     const invoices = await this.prisma.tenant.invoice.findMany({
       where: { period, status: { not: 'void' } },
       orderBy: { number: 'asc' },
-      include: { lines: { orderBy: { sortOrder: 'asc' } } },
+      include: { lines: { orderBy: { sortOrder: 'asc' } }, electronicDocument: { select: ELECTRONIC_SELECT } },
       take: 5000,
     });
     return { issuer: await this.issuer(), invoices };
@@ -334,6 +346,8 @@ export class BillingService {
 }
 
 const periodParam = new ZodPipe(periodSchema);
+/** Lo que se muestra del documento electrónico en el recibo. */
+const ELECTRONIC_SELECT = { status: true, documentKey: true, prefix: true, number: true, qrUrl: true, environment: true } as const;
 
 @Controller('billing')
 @TenantScoped()
@@ -385,5 +399,5 @@ class InvoicesController {
   }
 }
 
-@Module({ controllers: [BillingController, InvoicesController], providers: [BillingService] })
+@Module({ imports: [EInvoiceModule], controllers: [BillingController, InvoicesController], providers: [BillingService] })
 export class BillingModule {}

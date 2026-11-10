@@ -112,6 +112,12 @@ export function Receipt({ issuer, invoice }: { issuer: Issuer; invoice: any }) {
       <footer className="r-foot">
         {issuer.branding.receiptFooter && <p>{issuer.branding.receiptFooter}</p>}
         <p>Ref. de pago: {s.code}-{invoice.number}</p>
+        {invoice.electronicDocument?.status === 'accepted' && (
+          <p className="small" style={{ wordBreak: 'break-all' }}>
+            Documento electrónico {invoice.electronicDocument.prefix}{invoice.electronicDocument.number}
+            {invoice.electronicDocument.environment !== 'produccion' ? ' (habilitación, sin validez)' : ''} · CUFE/CUDE: {invoice.electronicDocument.documentKey}
+          </p>
+        )}
       </footer>
     </article>
   );

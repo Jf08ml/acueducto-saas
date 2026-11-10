@@ -120,6 +120,25 @@ Flujo: **Facturación → Facturar período → previsualización → Emitir**. 
 - **Saldo anterior:** al emitir, cada factura guarda lo que el suscriptor debía de facturas previas. El recibo lo muestra
   y el «Total a pagar» lo incluye. Es informativo: la cartera se calcula siempre factura por factura, así no hay doble conteo.
 
+### Facturación electrónica (base)
+
+Deja listo el flujo; **todavía no está conectada a la DIAN**. Solo hay un proveedor **simulado** (habilitación), sin validez.
+
+- **Configuración** (*Configuración → Factura electrónica*, `tenant.einvoice_configs` con RLS):
+  - Tipo de documento: documento equivalente de SPD o factura de venta.
+  - Ambiente y proveedor. El simulado no se puede usar en producción.
+  - Resolución de numeración: número, fecha, prefijo, rango y vigencia.
+  - Clave técnica, **cifrada** con AES-256-GCM (`APP_ENCRYPTION_KEY`). La API nunca la devuelve.
+- **Flujo:** al emitir un período, si está activa, se encola `einvoice.send_period`:
+  1. Numera las facturas del período con el rango autorizado, **todo o nada**, bajo bloqueo por acueducto: sin huecos ni repetidos. Si el rango no alcanza o la resolución no está vigente, no numera ninguna y la tarea informa el motivo.
+  2. Arma un documento neutro (`buildEInvoicePayload` en `packages/shared/src/einvoice.ts`) y lo envía al proveedor.
+  3. Guarda el CUFE/CUDE, el QR o el error (`tenant.einvoice_documents`, uno por factura).
+- Lo que falla se reintenta desde la página del período («Enviar pendientes») y conserva su número.
+- El recibo, en pantalla y en PDF, muestra el número electrónico y el CUFE/CUDE cuando fue aceptado.
+- **Anular** un período: lo no enviado queda anulado; lo ya aceptado queda «requiere nota crédito».
+- **Para conectar un proveedor real:** implementar `EInvoiceProvider` (`apps/api/src/einvoice/einvoice.module.ts`) con su API y registrarlo en `PROVIDERS`. El proveedor firma, arma el XML UBL 2.1 y transmite a la DIAN.
+- **Pendiente:** proveedor real, notas crédito y débito, y la validación con un asesor tributario del tipo de documento y el calendario que aplican a cada acueducto (Resolución DIAN 000165 de 2023, orientativo).
+
 ### Recaudo y cartera
 
 - **Pago:** se busca al suscriptor por la referencia del recibo (`código-número`), el código, el documento o el nombre.

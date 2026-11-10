@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  AREA_TYPES, LEGAL_NATURES, MAX_SUBSIDY_PCT, PROVIDER_TYPES, suggestedBasicConsumptionM3, tariffSchema,
+  AREA_TYPES, EINVOICE_DOCUMENT_TYPES, EINVOICE_PROVIDERS, LEGAL_NATURES, MAX_SUBSIDY_PCT, PROVIDER_TYPES, suggestedBasicConsumptionM3, tariffSchema,
 } from '@agua-mata/shared';
 import { api, API_URL, apiDownload, apiUpload, waitForJob } from '@/lib/api';
 import { useMe } from '@/components/app-shell';
@@ -15,6 +15,7 @@ const STEPS = [
   ['tariff', 'Tarifa'],
   ['branding', 'Marca'],
   ['collections', 'Cobro'],
+  ['einvoice', 'Factura electrónica'],
   ['domain', 'Dominio'],
   ['subscribers', 'Suscriptores'],
   ['compliance', 'Obligaciones'],
@@ -90,6 +91,7 @@ export default function ConfiguracionPage() {
       {step === 'tariff' && <TariffStep state={state} onSaved={() => { load(); setStep('branding'); }} />}
       {step === 'branding' && <BrandingStep state={state} onSaved={() => { load(); reloadMe(); }} />}
       {step === 'collections' && <CollectionsStep />}
+      {step === 'einvoice' && <EInvoiceStep />}
       {step === 'domain' && <DomainStep enabled={me.entitlements.features.custom_domain === true} />}
       {step === 'subscribers' && <ImportStep onImported={load} />}
       {step === 'compliance' && <ComplianceStep />}
@@ -612,5 +614,97 @@ function ComplianceStep() {
       </div>
       {msg && <p className="alert alert-danger">{msg}</p>}
     </section>
+  );
+}
+
+/**
+ * Facturación electrónica (BASE). Se guarda la resolución de numeración de la DIAN y el proveedor tecnológico.
+ * Hoy solo existe el proveedor simulado (habilitación), que no transmite nada a la DIAN.
+ */
+function EInvoiceStep() {
+  const blank = {
+    enabled: false, provider: 'simulated', environment: 'habilitacion', documentType: 'documento_equivalente_spd',
+    resolution: { number: '', date: '', prefix: '', rangeFrom: '1', rangeTo: '', validFrom: '', validTo: '' }, technicalKey: '',
+  };
+  const [f, setF] = useState<any>(null);
+  const [info, setInfo] = useState<{ hasTechnicalKey: boolean; lastNumber: number | null; warnings: string[] }>({ hasTechnicalKey: false, lastNumber: null, warnings: [] });
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const apply = (r: any) => {
+    const c = r.config;
+    setF(c ? { ...c, technicalKey: '', resolution: { ...c.resolution, rangeFrom: String(c.resolution.rangeFrom), rangeTo: String(c.resolution.rangeTo) } } : blank);
+    setInfo({ hasTechnicalKey: Boolean(c?.hasTechnicalKey), lastNumber: r.lastNumber, warnings: r.warnings ?? [] });
+  };
+  useEffect(() => { api('/einvoice/config').then(apply).catch((e) => setMsg({ kind: 'danger', text: errMsg(e) })); }, []);
+  if (!f) return msg ? <p className="alert alert-danger">{msg.text}</p> : <p className="muted">Cargando…</p>;
+
+  const setR = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, resolution: { ...f.resolution, [k]: k === 'prefix' ? e.target.value.toUpperCase() : e.target.value } });
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      const body = {
+        enabled: f.enabled, provider: f.provider, environment: f.environment, documentType: f.documentType,
+        resolution: { ...f.resolution, rangeFrom: Number(f.resolution.rangeFrom), rangeTo: Number(f.resolution.rangeTo) },
+        ...(f.technicalKey ? { technicalKey: f.technicalKey } : {}),
+      };
+      apply(await api('/einvoice/config', { method: 'PUT', body: JSON.stringify(body) }));
+      setMsg({ kind: 'ok', text: f.enabled ? 'Guardado. Las facturaciones que emitas desde ahora se enviarán como documento electrónico.' : 'Guardado (desactivada).' });
+    } catch (err) {
+      setMsg({ kind: 'danger', text: errMsg(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="card stack" onSubmit={save}>
+      <h2 style={{ margin: 0 }}>Facturación electrónica</h2>
+      <div className="alert alert-warn small">
+        Esta es una base: hoy solo está disponible el proveedor <strong>simulado</strong>, para probar el flujo. No transmite nada a la DIAN
+        y sus documentos no tienen validez. Para facturar de verdad hay que conectar un proveedor tecnológico autorizado.
+        Confirma con tu asesor tributario si te corresponde el documento equivalente de servicios públicos o la factura electrónica de venta, y desde cuándo.
+      </div>
+      <label className="radio-card">
+        <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
+        <span><strong>Enviar cada facturación como documento electrónico</strong><br /><span className="muted">Al emitir un período, cada factura recibe un número de la resolución y se envía al proveedor en segundo plano.</span></span>
+      </label>
+      <div className="grid2">
+        <label className="field">Proveedor tecnológico
+          <select value={f.provider} onChange={(e) => setF({ ...f, provider: e.target.value })}>
+            {EINVOICE_PROVIDERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </label>
+        <label className="field">Ambiente
+          <select value={f.environment} onChange={(e) => setF({ ...f, environment: e.target.value })}>
+            <option value="habilitacion">Habilitación (pruebas)</option><option value="produccion" disabled={f.provider === 'simulated'}>Producción</option>
+          </select>
+        </label>
+        <label className="field" style={{ gridColumn: '1 / -1' }}>Tipo de documento
+          <select value={f.documentType} onChange={(e) => setF({ ...f, documentType: e.target.value })}>
+            {EINVOICE_DOCUMENT_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </label>
+      </div>
+      <h3 style={{ margin: '8px 0 0' }}>Resolución de numeración (DIAN)</h3>
+      <div className="grid2">
+        <label className="field">Número de resolución<input value={f.resolution.number} onChange={setR('number')} required maxLength={40} /></label>
+        <label className="field">Fecha de la resolución<input type="date" value={f.resolution.date} onChange={setR('date')} required /></label>
+        <label className="field">Prefijo<span className="hint">Hasta 4 letras o números (p. ej. SPD). Puede ir vacío.</span><input value={f.resolution.prefix} onChange={setR('prefix')} maxLength={4} /></label>
+        <label className="field">Clave técnica<span className="hint">{info.hasTechnicalKey ? 'Ya hay una guardada (cifrada). Escribe otra solo para cambiarla.' : 'La entrega la DIAN con la resolución. Se guarda cifrada.'}</span>
+          <input type="password" autoComplete="off" value={f.technicalKey} onChange={(e) => setF({ ...f, technicalKey: e.target.value })} maxLength={200} />
+        </label>
+        <label className="field">Desde el número<input inputMode="numeric" value={f.resolution.rangeFrom} onChange={setR('rangeFrom')} required /></label>
+        <label className="field">Hasta el número<input inputMode="numeric" value={f.resolution.rangeTo} onChange={setR('rangeTo')} required /></label>
+        <label className="field">Vigente desde<input type="date" value={f.resolution.validFrom} onChange={setR('validFrom')} required /></label>
+        <label className="field">Vigente hasta<input type="date" value={f.resolution.validTo} onChange={setR('validTo')} required /></label>
+      </div>
+      {info.lastNumber !== null && <p className="small muted" style={{ margin: 0 }}>Último número usado: {f.resolution.prefix}{info.lastNumber}.</p>}
+      {info.warnings.map((w) => <div key={w} className="alert alert-warn small">{w}</div>)}
+      {msg && <div className={`alert alert-${msg.kind}`}>{msg.text}</div>}
+      <div><button className="btn" type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar'}</button></div>
+    </form>
   );
 }
