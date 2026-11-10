@@ -25,6 +25,15 @@ export function platformRootHost(): string {
   return new URL(platformOrigin()).hostname;
 }
 
+/** Dirección pública de un acueducto: su dominio principal verificado o el subdominio por defecto. */
+export async function orgPublicUrl(prisma: PrismaService, organizationId: string) {
+  const org = await prisma.platform.organization.findUniqueOrThrow({
+    where: { id: organizationId },
+    include: { domains: { where: { isPrimary: true, status: 'verified' } } },
+  });
+  return { org, url: org.domains[0] ? `https://${org.domains[0].hostname}` : tenantDefaultUrl(platformOrigin(), org.slug) };
+}
+
 /** Resolución DNS reemplazable en pruebas. */
 export class DnsResolver {
   static resolveTxt: (name: string) => Promise<string[][]> = (name) => dns.resolveTxt(name);

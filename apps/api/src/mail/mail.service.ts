@@ -16,12 +16,14 @@ export interface MailTransport {
   send(from: string, msg: MailMessage): Promise<void>;
 }
 
-/** Desarrollo/pruebas: no envía, solo registra. */
+/** Desarrollo/pruebas: no envía, solo registra. Fuera de producción muestra el texto (con los enlaces) en la consola. */
 export class LogTransport implements MailTransport {
   readonly name = 'log';
   private readonly log = new Logger('Mail');
   async send(from: string, msg: MailMessage) {
-    if (process.env.NODE_ENV !== 'test') this.log.log(`(log) ${from} → ${msg.to} · ${msg.subject}`);
+    if (process.env.NODE_ENV === 'test') return;
+    this.log.log(`(log) ${from} → ${msg.to} · ${msg.subject}`);
+    if (process.env.NODE_ENV !== 'production') this.log.log(`(log) ${msg.text}`);
   }
 }
 

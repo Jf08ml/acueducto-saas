@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { tenantDefaultUrl } from '@agua-mata/shared';
-import { api, setToken } from '@/lib/api';
+import { api, logout } from '@/lib/api';
 import { PLATFORM_ORIGIN, usePlatformOnly } from '@/lib/host';
 import { Empty, errorText, fmtNumber, Icon, PageHeader, Stat } from '@/components/ui';
 import { ConfirmModal } from '@/components/modal';
@@ -67,7 +67,7 @@ export default function AdminPage() {
         <div className="brand"><span className="brand-mark"><Icon name="drop" /></span><span className="brand-name">AguaMata<br /><span className="small muted">Superadmin</span></span></div>
         <a className="nav-link" href="/admin" aria-current="page"><Icon name="building" /> Organizaciones</a>
         <div className="sidebar-foot">
-          <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => { setToken(null); router.push('/'); }}>
+          <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => logout()}>
             <Icon name="logout" /> Salir
           </button>
         </div>

@@ -1,25 +1,12 @@
 'use client';
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
-const TOKEN_KEY = 'aguamata.token';
-
-// MVP: token en sessionStorage. Antes de producción pasar a cookie httpOnly emitida por el backend.
-export function getToken(): string | null {
-  try {
-    return sessionStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setToken(token: string | null) {
-  try {
-    if (token) sessionStorage.setItem(TOKEN_KEY, token);
-    else sessionStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* almacenamiento no disponible */
-  }
-}
+/**
+ * Cliente de la API. La sesión viaja en una cookie httpOnly que pone la API (el JavaScript de la página
+ * no la puede leer). Las peticiones van al mismo origen (/api/v1) y Next.js las reenvía a la API.
+ */
+const API = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
+/** La API exige este encabezado en toda petición que modifica datos (protección CSRF). */
+const CSRF = { 'X-Requested-With': 'aguamata' };
 
 export class ApiError extends Error {
   constructor(
@@ -33,11 +20,11 @@ export class ApiError extends Error {
 export const API_URL = API;
 
 /** Sube un archivo (multipart). No fija Content-Type para que el navegador ponga el boundary. */
-export async function apiUpload<T = any>(path: string, file: File, field = 'file'): Promise<T> {
+export async function apiUpload<T = any>(path: string, file: File, field = 'file', extra: Record<string, string> = {}): Promise<T> {
   const fd = new FormData();
   fd.append(field, file);
-  const token = getToken();
-  const res = await fetch(`${API}${path}`, { method: 'POST', body: fd, headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  for (const [k, v] of Object.entries(extra)) fd.append(k, v);
+  const res = await fetch(`${API}${path}`, { method: 'POST', body: fd, headers: CSRF, credentials: 'same-origin' });
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(res.status, body);
   return body as T;
@@ -45,9 +32,8 @@ export async function apiUpload<T = any>(path: string, file: File, field = 'file
 
 /** Descarga un archivo autenticado y lo ofrece al usuario. */
 export async function apiDownload(path: string, filename: string) {
-  const token = getToken();
-  const res = await fetch(`${API}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-  if (!res.ok) throw new ApiError(res.status, null);
+  const res = await fetch(`${API}${path}`, { credentials: 'same-origin' });
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
   const url = URL.createObjectURL(await res.blob());
   const a = document.createElement('a');
   a.href = url;
@@ -57,16 +43,18 @@ export async function apiDownload(path: string, filename: string) {
 }
 
 export async function api<T = any>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getToken();
   const res = await fetch(`${API}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers,
-    },
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', ...CSRF, ...init.headers },
   });
-  const body = await res.json().catch(() => null);
+  const body = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(res.status, body);
   return body as T;
+}
+
+/** Cierra la sesión en el servidor (revoca la cookie) y vuelve al inicio. */
+export async function logout(to = '/') {
+  await api('/auth/logout', { method: 'POST' }).catch(() => undefined);
+  window.location.href = to;
 }

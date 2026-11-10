@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { api, API_URL, setToken } from '@/lib/api';
+import { api, API_URL, logout } from '@/lib/api';
 import { ROLE_LABEL } from '@agua-mata/shared';
 import { brandStyle, errorText, Icon } from './ui';
 import { Modal } from './modal';
@@ -62,7 +62,7 @@ function PasswordModal({ open, onClose }: { open: boolean; onClose: () => void }
   return (
     <Modal open={open} onClose={onClose} title="Cambiar contraseña"
       footer={ok ? <button className="btn" onClick={onClose}>Listo</button> : <><button className="btn btn-secondary" onClick={onClose}>Cancelar</button><button className="btn" type="submit" form="pw-form" disabled={busy}>Cambiar</button></>}>
-      {ok ? <div className="alert alert-ok">Contraseña actualizada.</div> : (
+      {ok ? <div className="alert alert-ok">Contraseña actualizada. Cerramos tus sesiones abiertas en otros equipos.</div> : (
         <form id="pw-form" className="stack" onSubmit={submit}>
           <label className="field">Contraseña actual<input type="password" autoComplete="current-password" value={f.currentPassword} onChange={(e) => setF({ ...f, currentPassword: e.target.value })} required autoFocus /></label>
           <label className="field">Nueva contraseña (mínimo 8)<input type="password" autoComplete="new-password" minLength={8} value={f.newPassword} onChange={(e) => setF({ ...f, newPassword: e.target.value })} required /></label>
@@ -97,8 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   async function switchOrg(organizationId: string) {
     try {
-      const res = await api('/auth/switch', { method: 'POST', body: JSON.stringify({ organizationId }) });
-      setToken(res.accessToken);
+      await api('/auth/switch', { method: 'POST', body: JSON.stringify({ organizationId }) });
       window.location.href = '/panel';
     } catch (e: any) {
       setError(errorText(e));
@@ -144,7 +143,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => setPwOpen(true)}>
               <Icon name="shield" /> Cambiar contraseña
             </button>
-            <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => { setToken(null); router.push('/'); }}>
+            <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => logout()}>
               <Icon name="logout" /> Salir
             </button>
           </div>

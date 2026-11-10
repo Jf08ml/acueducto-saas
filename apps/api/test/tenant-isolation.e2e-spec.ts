@@ -8,6 +8,7 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { nitCheckDigit } from '@agua-mata/shared';
 import { createApp } from '../src/main';
+import { sid } from './helpers';
 
 const run = Date.now().toString().slice(-7);
 const owner = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL }); // limpieza y verificación
@@ -46,7 +47,7 @@ describe('Aislamiento entre tenants', () => {
       const reg = await http.post('/api/v1/onboarding/organizations').send(p).expect(201);
       org.id = reg.body.organizationId;
       const login = await http.post('/api/v1/auth/login').send({ email: p.owner.email, password: p.owner.password }).expect(201);
-      org.token = login.body.accessToken;
+      org.token = sid(login);
       const sub = await http
         .post('/api/v1/subscribers')
         .set('Authorization', `Bearer ${org.token}`)
@@ -59,7 +60,7 @@ describe('Aislamiento entre tenants', () => {
       .post('/api/v1/auth/login')
       .send({ email: process.env.SUPERADMIN_EMAIL ?? 'admin@aguamata.local', password: process.env.SUPERADMIN_PASSWORD ?? 'Admin12345!' })
       .expect(201);
-    adminToken = admin.body.accessToken;
+    adminToken = sid(admin);
   });
 
   afterAll(async () => {

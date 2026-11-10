@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { nitCheckDigit } from '@agua-mata/shared';
 import { createApp } from '../src/main';
+import { sid } from './helpers';
 
 const run = (Date.now() + 3).toString().slice(-7);
 const owner = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL });
@@ -33,7 +34,7 @@ describe('Facturación', () => {
       department: 'Nariño', municipality: 'Ipiales', organizationType: 'asociacion_usuarios', estimatedSubscribers: 10,
       contactEmail: email, contactPhone: '3001234567', owner: { fullName: `Dueño ${tag}`, email, password: 'Clave12345!' },
     }).expect(201);
-    const token = (await http.post('/api/v1/auth/login').send({ email, password: 'Clave12345!' }).expect(201)).body.accessToken;
+    const token = sid(await http.post('/api/v1/auth/login').send({ email, password: 'Clave12345!' }).expect(201));
     return { id: reg.body.organizationId as string, token: token as string };
   }
   const sub = async (token: string, body: any) => (await http.post('/api/v1/subscribers').set(auth(token)).send(body).expect(201)).body.id as string;

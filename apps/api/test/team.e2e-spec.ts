@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { nitCheckDigit } from '@agua-mata/shared';
 import { createApp } from '../src/main';
+import { sid } from './helpers';
 
 const run = (Date.now() + 5).toString().slice(-7);
 const owner = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL });
@@ -31,7 +32,7 @@ describe('Personal del acueducto', () => {
     return { id: reg.body.organizationId as string, token: await login(mail(`owner${tag}`)) };
   }
   async function login(email: string, password = PW, organizationId?: string) {
-    return (await http.post('/api/v1/auth/login').send({ email, password, organizationId }).expect(201)).body.accessToken as string;
+    return sid(await http.post('/api/v1/auth/login').send({ email, password, organizationId }).expect(201));
   }
   const tokenOf = (url: string) => new URL(url).searchParams.get('token')!;
   const invite = (t: string, email: string, role: string) => http.post('/api/v1/team/invitations').set(auth(t)).send({ email, role });
@@ -114,8 +115,9 @@ describe('Personal del acueducto', () => {
 
     const orgs = await http.get('/api/v1/auth/organizations').set(auth(B.token)).expect(200);
     expect(orgs.body.map((o: any) => o.id).sort()).toEqual([A.id, B.id].sort());
-    const sw = await http.post('/api/v1/auth/switch').set(auth(B.token)).send({ organizationId: A.id }).expect(201);
-    const asReader = sw.body.accessToken;
+    // Sesión aparte: cambiar de acueducto modifica la sesión actual, y B.token se sigue usando como B.
+    const asReader = await login(mail('ownerB'));
+    await http.post('/api/v1/auth/switch').set(auth(asReader)).send({ organizationId: A.id }).expect(201);
     expect((await http.get('/api/v1/me/organization').set(auth(asReader)).expect(200)).body).toMatchObject({ organization: { id: A.id }, role: 'reader' });
     await http.post('/api/v1/subscribers').set(auth(asReader)).send({ code: 'R1', fullName: 'Lector intenta', documentNumber: '1', address: 'Calle 1' }).expect(403);
     await http.post('/api/v1/auth/switch').set(auth(tokens.op)).send({ organizationId: B.id }).expect(403);

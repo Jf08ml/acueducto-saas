@@ -49,3 +49,13 @@ export function canAssignRole(actorRole: string, role: string): boolean {
   if (actorRole === 'admin') return role !== 'owner';
   return false;
 }
+
+/** Recuperación de contraseña. */
+export const PASSWORD_RESET_TTL_MINUTES = 60;
+export const requestPasswordResetSchema = z.object({
+  email: z.string().email().transform((e) => e.toLowerCase().trim()),
+  /** Si se pide desde la dirección de un acueducto, el enlace apunta a esa dirección. */
+  organizationId: z.string().uuid().optional(),
+});
+export type RequestPasswordResetInput = z.infer<typeof requestPasswordResetSchema>;
+export const resetPasswordSchema = z.object({ password });

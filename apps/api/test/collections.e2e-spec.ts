@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { nitCheckDigit } from '@agua-mata/shared';
 import { createApp } from '../src/main';
+import { sid } from './helpers';
 
 const run = (Date.now() + 6).toString().slice(-7);
 const owner = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL });
@@ -31,7 +32,7 @@ describe('Cobro: intereses, cargos, suspensión y reconexión', () => {
       department: 'Huila', municipality: 'Pitalito', organizationType: 'comunitario', estimatedSubscribers: 10,
       contactEmail: email, contactPhone: '3001234567', owner: { fullName: `Dueño ${tag}`, email, password: 'Clave12345!' },
     }).expect(201);
-    const token = (await http.post('/api/v1/auth/login').send({ email, password: 'Clave12345!' }).expect(201)).body.accessToken;
+    const token = sid(await http.post('/api/v1/auth/login').send({ email, password: 'Clave12345!' }).expect(201));
     await http.put('/api/v1/setup/tariff').set({ Authorization: `Bearer ${token}` }).send(TARIFF).expect(200);
     return { id: reg.body.organizationId as string, token: token as string };
   }

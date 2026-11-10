@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, API_URL, setToken } from '@/lib/api';
+import { api, API_URL } from '@/lib/api';
 import { useHostTenant } from '@/lib/host';
 import { brandStyle, Icon } from '@/components/ui';
 
@@ -26,7 +26,6 @@ export default function LoginPage() {
         method: 'POST',
         body: JSON.stringify({ email, password, ...(tenant ? { organizationId: tenant.id } : {}) }),
       });
-      setToken(res.accessToken);
       if (res.activeOrganizationId) router.push('/panel');
       else if (res.user.isPlatformAdmin) router.push('/admin');
       else setError('Tu usuario no pertenece a ningún acueducto activo.');
@@ -78,6 +77,7 @@ export default function LoginPage() {
           <label className="field">Contraseña<input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
           {error && <div className="alert alert-danger">{error}</div>}
           <button className="btn" type="submit" disabled={busy || host.status === 'loading'}>{busy ? 'Ingresando…' : 'Ingresar'}</button>
+          <a className="small" href="/recuperar" style={{ alignSelf: 'center' }}>¿Olvidaste tu contraseña?</a>
           {host.status === 'platform' && (
             <p className="muted small">¿Tu acueducto aún no usa AguaMata? <a href="/registro">Regístralo gratis</a></p>
           )}

@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { nitCheckDigit } from '@agua-mata/shared';
 import { createApp } from '../src/main';
+import { sid } from './helpers';
 import { DnsResolver } from '../src/domains/domains.module';
 
 const run = (Date.now() + 2).toString().slice(-7);
@@ -40,7 +41,7 @@ describe('Dominios, medidores y lecturas', () => {
       o.id = reg.body.organizationId;
       o.slug = reg.body.slug;
       expect(reg.body.defaultUrl).toBe(`http://${o.slug}.localhost:3000`);
-      o.token = (await http.post('/api/v1/auth/login').send({ email, password: 'Clave12345!' }).expect(201)).body.accessToken;
+      o.token = sid(await http.post('/api/v1/auth/login').send({ email, password: 'Clave12345!' }).expect(201));
       o.subscriberId = (await http.post('/api/v1/subscribers').set(auth(o.token))
         .send({ code: '001', fullName: `Usuario ${tag}`, documentNumber: '123', address: 'Vereda 1' }).expect(201)).body.id;
       o.meterId = (await http.post('/api/v1/meters').set(auth(o.token))

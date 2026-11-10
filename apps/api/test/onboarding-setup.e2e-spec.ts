@@ -7,6 +7,7 @@ import request from 'supertest';
 import ExcelJS from 'exceljs';
 import { nitCheckDigit } from '@agua-mata/shared';
 import { createApp } from '../src/main';
+import { sid } from './helpers';
 
 const run = (Date.now() + 1).toString().slice(-7);
 const owner = new PrismaClient({ datasourceUrl: process.env.DIRECT_DATABASE_URL });
@@ -38,7 +39,7 @@ describe('Asistente de configuración inicial', () => {
         contactEmail: email, contactPhone: '3001234567', owner: { fullName: `Dueño ${tag}`, email, password: 'Clave12345!' },
       }).expect(201);
       orgs[tag].id = reg.body.organizationId;
-      orgs[tag].token = (await http.post('/api/v1/auth/login').send({ email, password: 'Clave12345!' }).expect(201)).body.accessToken;
+      orgs[tag].token = sid(await http.post('/api/v1/auth/login').send({ email, password: 'Clave12345!' }).expect(201));
     }
   });
 

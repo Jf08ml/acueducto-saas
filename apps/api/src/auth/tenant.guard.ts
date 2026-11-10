@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentContext } from '../common/request-context';
-import type { JwtPayload } from './jwt-auth.guard';
+import type { Principal } from './session.service';
 
 const ROLES_KEY = 'roles';
 const BLOCKED_STATUSES = new Set(['suspended', 'deactivated']);
@@ -20,7 +20,7 @@ export class TenantGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
-    const user: JwtPayload | undefined = req.user;
+    const user: Principal | undefined = req.user;
     if (!user?.orgId) throw new ForbiddenException('Se requiere una organización activa');
 
     const membership = await this.prisma.platform.membership.findUnique({

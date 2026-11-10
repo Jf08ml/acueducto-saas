@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, API_URL, setToken } from '@/lib/api';
+import { api, API_URL } from '@/lib/api';
 import { brandStyle, errorText, Icon } from '@/components/ui';
 
 /** Aceptar una invitación (pública): crea la cuenta o vincula una existente con su contraseña. */
@@ -30,7 +30,6 @@ export default function InvitacionPage() {
         method: 'POST',
         body: JSON.stringify({ password: form.password, ...(info.userExists ? {} : { fullName: form.fullName }) }),
       });
-      setToken(null);
       // Window.history: quitar el token de la barra de direcciones.
       window.history.replaceState(null, '', '/invitacion');
       setDone(true);

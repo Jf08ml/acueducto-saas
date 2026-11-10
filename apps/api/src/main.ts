@@ -7,6 +7,8 @@ import { DomainsService } from './domains/domains.module';
 export async function createApp() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api/v1');
+  // La web reenvía /api/v1 a esta API (mismo origen para la cookie de sesión): confiar en X-Forwarded-* del proxy.
+  app.getHttpAdapter().getInstance().set('trust proxy', process.env.TRUST_PROXY ?? 'loopback');
   // CORS dinámico: la web puede servirse desde el dominio de la plataforma, el subdominio de cada
   // acueducto o un dominio propio verificado.
   const domains = app.get(DomainsService);

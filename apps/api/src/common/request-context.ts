@@ -6,6 +6,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  */
 export interface RequestContext {
   userId?: string;
+  sessionId?: string;
   organizationId?: string;
   role?: string;
   isPlatformAdmin?: boolean;

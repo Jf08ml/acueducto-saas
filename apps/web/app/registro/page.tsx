@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { nitCheckDigit, registerOrganizationSchema } from '@agua-mata/shared';
-import { api, setToken } from '@/lib/api';
+import { api } from '@/lib/api';
 import { usePlatformOnly } from '@/lib/host';
 
 const ORG_TYPES = [
@@ -42,8 +42,7 @@ export default function RegistroPage() {
     if (!parsed.success) return setError(parsed.error.issues[0]?.message ?? 'Revisa los datos');
     try {
       await api('/onboarding/organizations', { method: 'POST', body: JSON.stringify(parsed.data) });
-      const login = await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: f.ownerEmail, password: f.ownerPassword }) });
-      setToken(login.accessToken);
+      await api('/auth/login', { method: 'POST', body: JSON.stringify({ email: f.ownerEmail, password: f.ownerPassword }) });
       router.push('/configuracion');
     } catch (err: any) {
       setError(err.message);

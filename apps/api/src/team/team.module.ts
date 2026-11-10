@@ -6,7 +6,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import * as bcrypt from 'bcryptjs';
 import {
   acceptInvitationSchema, AcceptInvitationInput, canAssignRole, canManageMember, INVITATION_TTL_DAYS, inviteSchema, InviteInput,
-  ROLE_LABEL, tenantDefaultUrl, updateMemberSchema, UpdateMemberInput,
+  ROLE_LABEL, updateMemberSchema, UpdateMemberInput,
 } from '@agua-mata/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -15,7 +15,7 @@ import { emailLayout, MailService } from '../mail/mail.service';
 import { ZodPipe } from '../common/zod.pipe';
 import { Public, TenantScoped } from '../auth/decorators';
 import { currentContext } from '../common/request-context';
-import { platformOrigin } from '../domains/domains.module';
+import { orgPublicUrl } from '../domains/domains.module';
 
 const hashToken = (t: string) => createHash('sha256').update(t).digest('hex');
 
@@ -37,13 +37,8 @@ export class TeamService {
     return { organizationId: organizationId!, userId: userId!, role: role! };
   }
 
-  /** Dirección pública del acueducto: dominio principal verificado o subdominio por defecto. */
-  private async orgUrl(organizationId: string) {
-    const org = await this.prisma.platform.organization.findUniqueOrThrow({
-      where: { id: organizationId },
-      include: { domains: { where: { isPrimary: true, status: 'verified' } } },
-    });
-    return { org, url: org.domains[0] ? `https://${org.domains[0].hostname}` : tenantDefaultUrl(platformOrigin(), org.slug) };
+  private orgUrl(organizationId: string) {
+    return orgPublicUrl(this.prisma, organizationId);
   }
 
   async list() {

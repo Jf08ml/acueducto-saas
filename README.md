@@ -27,6 +27,7 @@ pnpm db:seed                               # 5 planes + superadmin
 pnpm dev                                   # API :4000 · Web :3000
 ```
 
+- La web reenvía `/api/v1` a la API (`API_INTERNAL_URL`), así que el navegador solo habla con :3000. Si tu `apps/web/.env.local` es antiguo, pon `NEXT_PUBLIC_API_URL="/api/v1"`.
 - Superadmin de desarrollo: `admin@aguamata.local` / `Admin12345!`
 - Registrar un acueducto: http://localhost:3000/registro
 
@@ -154,6 +155,20 @@ Se configuran en *Configuración → Cobro* (`collectionSettings` de la organiza
 - **SMTP**: `SMTP_URL` o `SMTP_HOST/PORT/USER/PASS/SECURE`.
 - El remitente visible es el nombre del acueducto (con la dirección de `MAIL_FROM`) y la respuesta va al correo de contacto del acueducto.
 - Si el proveedor falla, la operación no se rompe: se registra el error y la UI ofrece el enlace para compartirlo por WhatsApp.
+
+### Sesiones y contraseñas
+
+- **Sesión en cookie httpOnly** (`am_sid`): el JavaScript de la página no la puede leer. La BD (`platform.sessions`) guarda solo el hash del token.
+  - La cookie es de host, `SameSite=Lax`, y `Secure` con HTTPS (o `COOKIE_SECURE=true`). Cada dirección (plataforma, subdominio, dominio propio) tiene su propia sesión.
+  - Vence tras 8 horas sin uso y, como máximo, a los 7 días.
+  - **Salir** revoca la sesión en el servidor. **Cambiar la contraseña** cierra las demás sesiones del usuario.
+- **CSRF:** con cookie, toda petición que modifica datos debe traer `X-Requested-With: aguamata` (la web lo pone siempre). Un sitio ajeno no puede añadirlo sin pasar por CORS.
+- `Authorization: Bearer <token>` también sirve (pruebas e integraciones) y no necesita ese encabezado.
+- **Recuperar la contraseña** (`/recuperar`): enlace de un solo uso que vence en 60 minutos; solo se guarda su hash.
+  - La respuesta es la misma exista o no el correo. Máximo 3 enlaces por usuario y hora.
+  - Pedido desde la dirección de un acueducto, el enlace y el correo usan esa dirección y su marca.
+  - Al usarlo se cierran **todas** las sesiones del usuario.
+  - Con `MAIL_PROVIDER=log`, el enlace aparece en la consola de la API (fuera de producción).
 
 ### Usuarios del acueducto
 
