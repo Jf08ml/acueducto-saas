@@ -196,6 +196,12 @@ export class JobsService implements OnApplicationBootstrap, OnModuleDestroy {
       select: { id: true, type: true, status: true, progress: true, result: true, error: true, createdAt: true, finishedAt: true },
     });
     if (!job) throw new NotFoundException();
+    // La clave de almacenamiento de un archivo resultante no sale de la API (se descarga por /jobs/:id/file).
+    const result = job.result as Record<string, any> | null;
+    if (result?.file) {
+      const { key: _key, ...file } = result.file;
+      return { ...job, result: { ...result, file } };
+    }
     return job;
   }
 }

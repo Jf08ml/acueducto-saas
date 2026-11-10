@@ -182,4 +182,29 @@ describe('Facturación', () => {
       ]),
     ).rejects.toThrow(/foreign key|invoice_lines_invoice_same_org_fkey/);
   });
+
+  it('PDF de un recibo: generado en el servidor y solo para su acueducto', async () => {
+    const res = await http.get(`/api/v1/invoices/${A.invoiceId}/pdf`).set(auth(A.token)).buffer(true)
+      .parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); })
+      .expect(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect((res.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    await http.get(`/api/v1/invoices/${A.invoiceId}/pdf`).set(auth(B.token)).expect(404);
+  });
+
+  it('PDF de todo el período: se genera como tarea y se descarga por la tarea', async () => {
+    const job = await http.post(`/api/v1/billing/periods/${P}/receipts/pdf`).set(auth(A.token)).expect(201);
+    const status = await http.get(`/api/v1/jobs/${job.body.id}`).set(auth(A.token)).expect(200);
+    expect(status.body).toMatchObject({ status: 'done', result: { pages: 3, file: { name: `recibos-${P}.pdf` } } });
+    expect(status.body.result.file.key).toBeUndefined();
+    const file = await http.get(`/api/v1/jobs/${job.body.id}/file`).set(auth(A.token)).buffer(true)
+      .parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); })
+      .expect(200);
+    expect((file.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    const raw = (file.body as Buffer).toString('latin1');
+    // Un objeto /Type /Page por recibo (sin contar el /Type /Pages del árbol de páginas).
+    expect(raw.split('/Type /Page').length - raw.split('/Type /Pages').length).toBe(3);
+    await http.get(`/api/v1/jobs/${job.body.id}/file`).set(auth(B.token)).expect(404);
+    await http.post('/api/v1/billing/periods/2025-01/receipts/pdf').set(auth(A.token)).expect(404);
+  });
 });

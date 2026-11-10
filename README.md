@@ -112,10 +112,12 @@ Flujo: **Facturación → Facturar período → previsualización → Emitir**. 
 - **Copia de datos:** la factura guarda una copia de los datos del suscriptor y de la lectura. Editar al suscriptor después no la cambia.
 - **Anulación:** requiere motivo, solo es posible si ninguna factura tiene pagos, libera las lecturas y permite reemitir con números nuevos. Los anteriores no se reutilizan.
 - **Recibos:** `/facturacion/recibo?id=` y `/facturacion/recibos?p=AAAA-MM` (todos los del período), con la marca del acueducto,
-  historial de consumo y estilos de impresión. El PDF se obtiene con «Guardar como PDF» del navegador.
+  historial de consumo y estilos de impresión.
+- **PDF en el servidor** (pdfkit, sin navegador): `GET /invoices/:id/pdf` descarga un recibo al instante.
+  `POST /billing/periods/:period/receipts/pdf` genera los del período como tarea en la cola (un recibo por página) y se descarga con `GET /jobs/:id/file`.
+  El archivo queda en el almacenamiento del acueducto; el logo sale si es PNG o JPG.
 - **Saldo anterior:** al emitir, cada factura guarda lo que el suscriptor debía de facturas previas. El recibo lo muestra
   y el «Total a pagar» lo incluye. Es informativo: la cartera se calcula siempre factura por factura, así no hay doble conteo.
-- **Pendiente:** intereses de mora, cargos de reconexión, facturación electrónica DIAN y PDF generado en el servidor.
 
 ### Recaudo y cartera
 
