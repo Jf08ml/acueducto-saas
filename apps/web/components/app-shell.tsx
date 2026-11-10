@@ -14,7 +14,9 @@ export interface Me {
   };
   role: string;
   user: { id: string; email: string; fullName: string };
-  membershipId: string;
+  membershipId: string | null;
+  /** Presente si es una sesión de soporte de AguaMata (aprobada por el acueducto). */
+  support: { id: string; scope: 'read' | 'write'; expiresAt: string } | null;
   entitlements: { planCode: string | null; subscriptionStatus: string | null; features: Record<string, boolean>; limits: Record<string, number> };
   subscription: { status: string; trialEndsAt: string | null; currentPeriodEnd: string; graceEndsAt: string | null } | null;
 }
@@ -37,6 +39,7 @@ const NAV = [
   { href: '/cartera', label: 'Cartera', icon: 'chart' },
   { href: '/usuarios', label: 'Usuarios', icon: 'shield', adminOnly: true },
   { href: '/suscripcion', label: 'Suscripción', icon: 'drop', adminOnly: true },
+  { href: '/auditoria', label: 'Auditoría', icon: 'clipboard', adminOnly: true },
   { href: '/configuracion', label: 'Configuración', icon: 'settings', adminOnly: true },
 ];
 
@@ -155,7 +158,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </a>
           ))}
           <div className="sidebar-foot">
-            {orgs.length > 1 && (
+            {orgs.length > 1 && !me.support && (
               <label className="field" style={{ padding: '0 10px' }}>
                 <span className="small muted">Acueducto</span>
                 <select value={me.organization.id} onChange={(e) => switchOrg(e.target.value)} aria-label="Cambiar de acueducto">
@@ -167,15 +170,26 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="small" style={{ fontWeight: 600 }}>{me.user.fullName}</div>
               <div className="small muted">{ROLE_LABEL[me.role] ?? me.role} · Plan {me.entitlements.planCode ?? '—'} ({STATUS_LABEL[me.entitlements.subscriptionStatus ?? ''] ?? me.entitlements.subscriptionStatus ?? '—'})</div>
             </div>
-            <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => setPwOpen(true)}>
-              <Icon name="shield" /> Cambiar contraseña
-            </button>
+            {!me.support && (
+              <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => setPwOpen(true)}>
+                <Icon name="shield" /> Cambiar contraseña
+              </button>
+            )}
             <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', font: 'inherit' }} onClick={() => logout()}>
               <Icon name="logout" /> Salir
             </button>
           </div>
         </aside>
         <div className="main">
+          {me.support && (
+            <div className="topbar topbar-support" role="status">
+              <span className="small">
+                <strong>Sesión de soporte de AguaMata</strong> en {me.organization.name} · {me.support.scope === 'read' ? 'solo consulta' : 'puede modificar'} ·
+                vence {new Date(me.support.expiresAt).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' })}. Todo queda en la auditoría del acueducto.
+              </span>
+              <button className="btn btn-sm" onClick={() => logout('/')}>Salir del soporte</button>
+            </div>
+          )}
           <SubscriptionBanner me={me} pathname={pathname} />
           {!me.organization.onboardingCompletedAt && isAdminRole(me.role) && !pathname.startsWith('/configuracion') && (
             <div className="topbar">

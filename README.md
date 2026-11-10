@@ -47,6 +47,7 @@ pnpm test     # incluye la prueba de aislamiento entre tenants contra la BD real
    Sin organización en el contexto, RLS devuelve 0 filas (falla cerrado).
 4. **El Superadmin** usa `prisma.platform` y rutas `@PlatformAdmin()`: no fija tenant, así que no ve datos de acueductos.
    Las métricas salen de funciones `SECURITY DEFINER` que solo devuelven agregados.
+5. **Acceso de soporte:** la única excepción, y solo si el acueducto la aprueba (ver «Acceso de soporte y auditoría»).
 
 ### Checklist para una tabla nueva de tenant
 
@@ -188,6 +189,19 @@ Se configuran en *Configuración → Cobro* (`collectionSettings` de la organiza
   - Pedido desde la dirección de un acueducto, el enlace y el correo usan esa dirección y su marca.
   - Al usarlo se cierran **todas** las sesiones del usuario.
   - Con `MAIL_PROVIDER=log`, el enlace aparece en la consola de la API (fuera de producción).
+
+### Acceso de soporte y auditoría
+
+- **Soporte** (`platform.support_access_grants`). El superadmin no ve datos de un acueducto salvo que este lo apruebe:
+  1. Desde *Organizaciones → Soporte*, pide acceso con motivo, alcance (solo consultar, o consultar y modificar) y duración (1 a 72 horas).
+  2. Los dueños y administradores reciben un correo y responden en *Auditoría*. El plazo corre desde la aprobación.
+  3. Quien lo pidió entra con una **sesión de soporte** que vence con el permiso. Su sesión de superadmin se cierra.
+  4. El `TenantGuard` revisa el permiso en **cada petición** (aprobado, vigente, del mismo acueducto, de quien lo pidió). Con alcance de consulta, rechaza toda modificación.
+  5. Cada petición queda en la bitácora del acueducto (`support.request`, con método y ruta, sin parámetros de búsqueda). Lo que se modifica lleva `viaSupportGrant`.
+  6. El acueducto lo puede **cortar en cualquier momento**: el permiso queda revocado y las sesiones de soporte se cierran de inmediato.
+- **Bitácora** (`platform.audit_logs`, solo inserción):
+  - El acueducto ve la suya completa en *Auditoría*, con filtro por tipo.
+  - El superadmin (`/admin/auditoria`) ve lo de la plataforma y, de cada acueducto, solo cobro, estado de la cuenta y soporte. La operación es privada.
 
 ### Usuarios del acueducto
 

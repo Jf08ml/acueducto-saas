@@ -18,12 +18,17 @@ export class AuditService {
 
   async log(entry: AuditEntry) {
     const ctx = currentContext();
+    // Lo que se hace durante una sesión de soporte queda marcado con el permiso que la respalda.
+    let data = entry.data;
+    if (ctx.supportGrantId && entry.action !== 'support.request') {
+      data = (data && typeof data === 'object' && !Array.isArray(data) ? { ...(data as object), viaSupportGrant: ctx.supportGrantId } : { value: data ?? null, viaSupportGrant: ctx.supportGrantId }) as Prisma.InputJsonValue;
+    }
     await this.prisma.platform.auditLog.create({
       data: {
         action: entry.action,
         entity: entry.entity,
         entityId: entry.entityId,
-        data: entry.data,
+        data,
         organizationId: entry.organizationId ?? ctx.organizationId,
         actorUserId: entry.actorUserId ?? ctx.userId,
         ip: ctx.ip,

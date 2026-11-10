@@ -68,6 +68,7 @@ model Organization {
   backgroundJobs     BackgroundJob[]
   saasInvoices       SaasInvoice[]
   saasPayments       SaasPayment[]
+  supportGrants      SupportAccessGrant[]
 
   @@map("organizations")
   @@schema("platform")
@@ -354,17 +355,27 @@ model PlatformSetting {
   @@schema("platform")
 }
 
-/// Acceso excepcional de soporte a datos de un tenant: solicitado, aprobado por el tenant, con TTL y auditado.
+/// Acceso excepcional de soporte a datos de un tenant: lo pide el superadmin, lo aprueba el acueducto,
+/// vence solo (expiresAt) y cada petición queda en la auditoría. El acueducto lo puede revocar en cualquier momento.
 model SupportAccessGrant {
   id             String    @id @default(uuid()) @db.Uuid
   organizationId String    @map("organization_id") @db.Uuid
   requestedById  String    @map("requested_by_id") @db.Uuid
   approvedById   String?   @map("approved_by_id") @db.Uuid
   reason         String
+  /// read = solo consultar | write = también modificar (lo decide quien aprueba al ver la solicitud).
   scope          String    @default("read")
   status         String    @default("pending") // pending | approved | rejected | revoked
+  /// Horas de acceso que se piden; corren desde la aprobación.
+  durationHours  Int       @default(2) @map("duration_hours")
+  approvedAt     DateTime? @map("approved_at")
   expiresAt      DateTime? @map("expires_at")
+  decidedById    String?   @map("decided_by_id") @db.Uuid
+  decisionNote   String?   @map("decision_note")
+  revokedAt      DateTime? @map("revoked_at")
   createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, status])
   @@map("support_access_grants")

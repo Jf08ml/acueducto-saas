@@ -108,6 +108,8 @@ p { margin: 0; }
 .main { min-width: 0; }
 .topbar-warn { background: var(--warn-bg) !important; color: var(--warn); }
 .topbar-danger { background: var(--danger-bg) !important; color: var(--danger); }
+.topbar-support { background: #4a1d96 !important; color: #fff; }
+.topbar-support .btn { background: #fff; color: #4a1d96; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 12px 28px; border-bottom: 1px solid var(--border); background: var(--surface);

@@ -9,6 +9,7 @@ import { Icon } from './ui';
 const NAV = [
   { href: '/admin', label: 'Organizaciones', icon: 'building' },
   { href: '/admin/cobros', label: 'Cobros', icon: 'cash' },
+  { href: '/admin/auditoria', label: 'Auditoría', icon: 'clipboard' },
 ];
 
 /** Marco del panel Superadmin. Solo existe en el dominio de la plataforma. */

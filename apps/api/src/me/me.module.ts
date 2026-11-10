@@ -15,14 +15,16 @@ class MeController {
   @Get('organization')
   @TenantScoped()
   async organization() {
-    const { organizationId, role, userId } = currentContext();
-    const [org, user, membership] = await Promise.all([
+    const { organizationId, role, userId, supportGrantId } = currentContext();
+    const [org, user, membership, grant] = await Promise.all([
       this.prisma.platform.organization.findUniqueOrThrow({
         where: { id: organizationId! },
         select: { id: true, name: true, slug: true, status: true, branding: true, municipality: true, department: true, onboardingCompletedAt: true },
       }),
       this.prisma.platform.user.findUniqueOrThrow({ where: { id: userId! }, select: { id: true, email: true, fullName: true } }),
-      this.prisma.platform.membership.findUniqueOrThrow({ where: { userId_organizationId: { userId: userId!, organizationId: organizationId! } }, select: { id: true } }),
+      // Una sesión de soporte no tiene membresía: actúa con el permiso aprobado por el acueducto.
+      this.prisma.platform.membership.findUnique({ where: { userId_organizationId: { userId: userId!, organizationId: organizationId! } }, select: { id: true } }),
+      supportGrantId ? this.prisma.platform.supportAccessGrant.findUnique({ where: { id: supportGrantId }, select: { id: true, scope: true, expiresAt: true } }) : null,
     ]);
     // No exponer claves internas de almacenamiento: solo colores, pie de recibo y si hay logo.
     const b = (org.branding ?? {}) as Record<string, string | undefined>;
@@ -32,7 +34,8 @@ class MeController {
       select: { status: true, trialEndsAt: true, currentPeriodEnd: true, graceEndsAt: true },
     });
     return {
-      organization: { ...org, branding }, role, user, membershipId: membership.id,
+      organization: { ...org, branding }, role, user, membershipId: membership?.id ?? null,
+      support: grant,
       entitlements: await this.entitlements.forOrganization(organizationId!),
       subscription: sub,
     };

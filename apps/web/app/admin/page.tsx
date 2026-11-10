@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CYCLE_LABEL, SUBSCRIPTION_STATUS_LABEL, tenantDefaultUrl } from '@agua-mata/shared';
+import { CYCLE_LABEL, SUBSCRIPTION_STATUS_LABEL, SUPPORT_SCOPE_LABEL, SUPPORT_STATUS_LABEL, supportGrantState, tenantDefaultUrl } from '@agua-mata/shared';
 import { api } from '@/lib/api';
 import { PLATFORM_ORIGIN } from '@/lib/host';
 import { AdminShell } from '@/components/admin-shell';
@@ -22,12 +22,16 @@ const date = (d?: string | null) => (d ? new Date(d).toLocaleDateString('es-CO',
 export default function AdminPage() {
   const router = useRouter();
   const [orgs, setOrgs] = useState<any[]>([]);
+  const [grants, setGrants] = useState<any[]>([]);
+  const [supportOrg, setSupportOrg] = useState<any>(null);
   const [q, setQ] = useState('');
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     try {
-      setOrgs(await api('/platform/organizations'));
+      const [o, g] = await Promise.all([api('/platform/organizations'), api('/platform/support/grants')]);
+      setOrgs(o);
+      setGrants(g);
     } catch (e: any) {
       if (e.status === 401 || e.status === 403) router.push('/');
       else setError(e.message);
@@ -97,6 +101,7 @@ export default function AdminPage() {
                       <td><span className={`badge ${cls}`}>{label}</span></td>
                       <td className="right">
                         <div className="row" style={{ justifyContent: 'flex-end' }}>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setSupportOrg(o)}>Soporte</button>
                           <button className="btn btn-secondary btn-sm" onClick={() => setSubOrg(o)}>Suscripción</button>
                           {o.status === 'suspended'
                             ? <button className="btn btn-secondary btn-sm" onClick={() => setStatus(o, 'active')}>Reactivar</button>
@@ -125,6 +130,8 @@ export default function AdminPage() {
           ? <p><strong>{pending.org.name}</strong> perderá todo el acceso hasta que se reactive (no es lo mismo que el modo de solo lectura por falta de pago). No se borra nada.</p>
           : <p><strong>{pending.org.name}</strong> recuperará el acceso a su cuenta.</p>)}
       />
+      <SupportModal org={supportOrg} grant={supportOrg ? grants.find((g) => g.organizationId === supportOrg.id) ?? null : null}
+        onClose={() => setSupportOrg(null)} onChanged={load} />
       <SubscriptionModal org={subOrg} onClose={() => setSubOrg(null)} onSaved={() => { setSubOrg(null); load(); }} />
     </AdminShell>
   );
@@ -177,6 +184,83 @@ function SubscriptionModal({ org, onClose, onSaved }: { org: any; onClose: () =>
           <label className="field">Motivo (queda en la auditoría)<textarea rows={2} required minLength={5} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} /></label>
           {error && <div className="alert alert-danger">{error}</div>}
         </form>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * Acceso de soporte a un acueducto: pedirlo (motivo, alcance, horas) y, cuando el acueducto lo aprueba, entrar.
+ * Al entrar, la sesión del superadmin se reemplaza por una de soporte que vence con el permiso.
+ */
+function SupportModal({ org, grant, onClose, onChanged }: { org: any; grant: any; onClose: () => void; onChanged: () => void }) {
+  const [f, setF] = useState({ reason: '', scope: 'read', durationHours: '2' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (org) { setF({ reason: '', scope: 'read', durationHours: '2' }); setError(''); } }, [org]);
+  const state = grant ? supportGrantState(grant) : null;
+  const canRequest = !grant || !['pending', 'approved'].includes(state ?? '');
+
+  async function request(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/platform/support/organizations/${org.id}/grants`, { method: 'POST', body: JSON.stringify({ reason: f.reason, scope: f.scope, durationHours: Number(f.durationHours) }) });
+      onChanged();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function enter() {
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/platform/support/grants/${grant.id}/enter`, { method: 'POST' });
+      window.location.href = '/panel';
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={org !== null} onClose={onClose} title={`Soporte · ${org?.name ?? ''}`}
+      footer={canRequest
+        ? <><button className="btn btn-secondary" onClick={onClose}>Cancelar</button><button className="btn" type="submit" form="support-form" disabled={busy}>Pedir acceso</button></>
+        : state === 'approved'
+          ? <><button className="btn btn-secondary" onClick={onClose}>Cerrar</button><button className="btn" onClick={enter} disabled={busy}>Entrar a la cuenta</button></>
+          : <button className="btn btn-secondary" onClick={onClose}>Cerrar</button>}>
+      {org && (
+        <div className="stack">
+          {grant && (
+            <div className={`alert ${state === 'approved' ? 'alert-ok' : state === 'pending' ? 'alert-info' : ''}`}>
+              Última solicitud: <strong>{SUPPORT_STATUS_LABEL[state ?? ''] ?? state}</strong> · {SUPPORT_SCOPE_LABEL[grant.scope]} · {grant.durationHours} h
+              {grant.expiresAt && <> · vence {date(grant.expiresAt)} {new Date(grant.expiresAt).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: 'numeric', minute: '2-digit' })}</>}
+              {grant.decisionNote && <div className="small">Respuesta del acueducto: {grant.decisionNote}</div>}
+            </div>
+          )}
+          {state === 'approved' && <p className="small muted" style={{ margin: 0 }}>Al entrar se cierra tu sesión de superadmin. Para volver, sal del soporte e inicia sesión de nuevo.</p>}
+          {state === 'pending' && <p className="small muted" style={{ margin: 0 }}>Le avisamos por correo a los dueños y administradores del acueducto. Cuando lo aprueben, podrás entrar desde aquí.</p>}
+          {canRequest && (
+            <form id="support-form" className="stack" onSubmit={request}>
+              <p className="small muted" style={{ margin: 0 }}>No ves los datos del acueducto salvo que lo apruebe. Cada consulta queda en su auditoría y lo puede cortar cuando quiera.</p>
+              <label className="field">Motivo (lo lee el acueducto)<textarea rows={3} required minLength={10} maxLength={500} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} /></label>
+              <div className="grid2">
+                <label className="field">Alcance
+                  <select value={f.scope} onChange={(e) => setF({ ...f, scope: e.target.value })}>
+                    <option value="read">{SUPPORT_SCOPE_LABEL.read}</option><option value="write">{SUPPORT_SCOPE_LABEL.write}</option>
+                  </select>
+                </label>
+                <label className="field">Duración (horas, desde la aprobación)<input type="number" min={1} max={72} value={f.durationHours} onChange={(e) => setF({ ...f, durationHours: e.target.value })} required /></label>
+              </div>
+            </form>
+          )}
+          {error && <div className="alert alert-danger">{error}</div>}
+        </div>
       )}
     </Modal>
   );

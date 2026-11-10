@@ -9,3 +9,4 @@ export * from './receivables';
 export * from './team';
 export * from './collections';
 export * from './saas';
+export * from './support';
