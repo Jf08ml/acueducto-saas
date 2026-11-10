@@ -158,7 +158,11 @@ describe('Asistente de configuración inicial', () => {
     expect(dry.body).toMatchObject({ dryRun: true, validRows: 3, imported: 0, issueCount: 0 });
 
     const res = await http.post('/api/v1/imports/subscribers?dryRun=false').set(auth(orgs.A.token)).attach('file', file, 'ok.xlsx').expect(201);
-    expect(res.body.imported).toBe(3);
+    // La importación corre como tarea en segundo plano (en pruebas, en el acto): se sigue por jobId.
+    expect(res.body.jobId).toEqual(expect.any(String));
+    const job = await http.get(`/api/v1/jobs/${res.body.jobId}`).set(auth(orgs.A.token)).expect(200);
+    expect(job.body).toMatchObject({ status: 'done', progress: 100, result: { imported: 3 } });
+    await http.get(`/api/v1/jobs/${res.body.jobId}`).set(auth(orgs.B.token)).expect(404);
     expect(await owner.subscriber.count({ where: { organizationId: orgs.A.id } })).toBe(4);
     const b = await http.get('/api/v1/subscribers').set(auth(orgs.B.token)).expect(200);
     expect(b.body).toEqual([]);

@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Injectable, Module, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Injectable, Module, OnModuleInit, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import ExcelJS from 'exceljs';
@@ -8,9 +8,14 @@ import { EntitlementsService } from '../entitlements/entitlements.service';
 import { AuditService } from '../audit/audit.service';
 import { TenantScoped } from '../auth/decorators';
 import { currentContext } from '../common/request-context';
+import { StorageService } from '../storage/storage.service';
+import { JobContext, JobsService } from '../jobs/jobs.module';
+import { randomUUID } from 'node:crypto';
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_ROWS = 10_000;
+const IMPORT_JOB = 'subscribers.import';
+type ImportJobInput = { key: string; fileName: string };
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 export interface ImportIssue {
@@ -24,15 +29,20 @@ const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').trim
 /**
  * Importación de suscriptores desde Excel en dos pasos: validar (dryRun) y luego confirmar.
  * Es todo o nada: si hay un solo error no se importa ninguna fila.
- * TODO: mover a la cola de trabajos (BullMQ) cuando se implemente, para archivos grandes.
  */
 @Injectable()
-export class ImportsService {
+export class ImportsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly entitlements: EntitlementsService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
+    private readonly jobs: JobsService,
   ) {}
+
+  onModuleInit() {
+    this.jobs.register<ImportJobInput, { imported: number }>(IMPORT_JOB, (job) => this.runImport(job));
+  }
 
   async template(): Promise<Buffer> {
     const wb = new ExcelJS.Workbook();
@@ -95,15 +105,10 @@ export class ImportsService {
     return { rows, issues, totalRows };
   }
 
-  async importSubscribers(file: Express.Multer.File | undefined, dryRun: boolean) {
-    if (!file) throw new BadRequestException('Adjunta el archivo .xlsx');
-    if (file.mimetype !== XLSX_MIME && !file.originalname.toLowerCase().endsWith('.xlsx')) {
-      throw new BadRequestException('El archivo debe ser .xlsx');
-    }
+  /** Valida filas, códigos existentes y el límite del plan. Corre con el tenant del contexto (petición o tarea). */
+  private async validate(buffer: Buffer) {
     const organizationId = currentContext().organizationId!;
-    await this.entitlements.assertFeature(organizationId, 'excel_import');
-
-    const { rows, issues, totalRows } = await this.parse(file.buffer);
+    const { rows, issues, totalRows } = await this.parse(buffer);
 
     // Códigos que ya existen en ESTE acueducto (RLS limita la búsqueda al tenant actual).
     const existing = await this.prisma.tenant.subscriber.findMany({
@@ -120,18 +125,52 @@ export class ImportsService {
     if (max !== -1 && current + valid.length > max) {
       issues.push({ row: 0, message: `El archivo supera el límite de tu plan: tienes ${current}, intentas agregar ${valid.length} y el máximo es ${max}` });
     }
-
     issues.sort((a, b) => a.row - b.row);
-    const summary = { totalRows, validRows: valid.length, issues: issues.slice(0, 500), issueCount: issues.length };
-    if (dryRun || issues.length) return { ...summary, imported: 0, dryRun };
+    return { valid, issues, summary: { totalRows, validRows: valid.length, issues: issues.slice(0, 500), issueCount: issues.length } };
+  }
 
-    for (let i = 0; i < valid.length; i += 1000) {
-      await this.prisma.tenant.subscriber.createMany({
-        data: valid.slice(i, i + 1000).map(({ row: _row, ...s }) => ({ ...s, organizationId })),
-      });
+  /**
+   * dryRun: revisa el archivo en la petición y devuelve el reporte.
+   * Confirmar: vuelve a revisar y, si no hay errores, guarda el archivo y encola la importación.
+   * La respuesta trae jobId para seguir el avance en GET /jobs/:id.
+   */
+  async importSubscribers(file: Express.Multer.File | undefined, dryRun: boolean) {
+    if (!file) throw new BadRequestException('Adjunta el archivo .xlsx');
+    if (file.mimetype !== XLSX_MIME && !file.originalname.toLowerCase().endsWith('.xlsx')) {
+      throw new BadRequestException('El archivo debe ser .xlsx');
     }
-    await this.audit.log({ action: 'subscribers.imported', entity: 'subscriber', data: { count: valid.length, file: file.originalname } });
-    return { ...summary, imported: valid.length, dryRun: false };
+    const organizationId = currentContext().organizationId!;
+    await this.entitlements.assertFeature(organizationId, 'excel_import');
+
+    const { issues, summary } = await this.validate(file.buffer);
+    if (dryRun || issues.length) return { ...summary, imported: 0, dryRun, jobId: null };
+
+    const key = this.storage.orgKey(organizationId, 'imports', `${randomUUID()}.xlsx`);
+    await this.storage.put(key, file.buffer, XLSX_MIME);
+    const job = await this.jobs.enqueue<ImportJobInput>(IMPORT_JOB, { key, fileName: file.originalname.slice(0, 200) }, { attempts: 1 });
+    return { ...summary, imported: 0, dryRun: false, jobId: job.id };
+  }
+
+  /** Tarea en segundo plano: todo o nada, en una sola transacción con RLS. */
+  private async runImport(job: JobContext<ImportJobInput>) {
+    const organizationId = job.organizationId!;
+    const buffer = await this.storage.get(job.input.key);
+    if (!buffer) throw new BadRequestException('No se encontró el archivo a importar. Súbelo de nuevo');
+    try {
+      // Se revisa otra vez: entre la revisión y la importación pudieron crearse suscriptores.
+      const { valid, issues } = await this.validate(buffer);
+      if (issues.length) throw new BadRequestException(`El archivo ya no es válido: ${issues[0].message} (fila ${issues[0].row})`);
+      await this.prisma.tenantTransaction(async (tx) => {
+        for (let i = 0; i < valid.length; i += 1000) {
+          await tx.subscriber.createMany({ data: valid.slice(i, i + 1000).map(({ row: _row, ...s }) => ({ ...s, organizationId })) });
+          await job.progress(((i + 1000) / valid.length) * 95);
+        }
+      });
+      await this.audit.log({ action: 'subscribers.imported', entity: 'subscriber', data: { count: valid.length, file: job.input.fileName, jobId: job.id } });
+      return { imported: valid.length };
+    } finally {
+      await this.storage.delete(job.input.key);
+    }
   }
 }
 

@@ -58,3 +58,27 @@ export async function logout(to = '/') {
   await api('/auth/logout', { method: 'POST' }).catch(() => undefined);
   window.location.href = to;
 }
+
+export interface JobStatus<R = any> {
+  id: string;
+  type: string;
+  status: 'queued' | 'running' | 'done' | 'failed';
+  progress: number;
+  result: R | null;
+  error: string | null;
+}
+
+/** Espera a que termine una tarea en segundo plano, informando el avance. Lanza ApiError si falla. */
+export async function waitForJob<R = any>(id: string, onProgress?: (job: JobStatus<R>) => void, timeoutMs = 15 * 60_000): Promise<R> {
+  const started = Date.now();
+  let delay = 400;
+  for (;;) {
+    const job = await api<JobStatus<R>>(`/jobs/${id}`);
+    onProgress?.(job);
+    if (job.status === 'done') return job.result as R;
+    if (job.status === 'failed') throw new ApiError(422, { message: job.error ?? 'La tarea falló' });
+    if (Date.now() - started > timeoutMs) throw new ApiError(408, { message: 'La tarea está tardando más de lo normal. Revisa más tarde' });
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay * 1.5, 3000);
+  }
+}

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   AREA_TYPES, LEGAL_NATURES, MAX_SUBSIDY_PCT, PROVIDER_TYPES, suggestedBasicConsumptionM3, tariffSchema,
 } from '@agua-mata/shared';
-import { api, API_URL, apiDownload, apiUpload } from '@/lib/api';
+import { api, API_URL, apiDownload, apiUpload, waitForJob } from '@/lib/api';
 import { useMe } from '@/components/app-shell';
 import { PageHeader } from '@/components/ui';
 import { ConfirmModal, Modal } from '@/components/modal';
@@ -494,6 +494,7 @@ function ImportStep({ onImported }: { onImported: () => void }) {
   const [result, setResult] = useState<any>(null);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
 
   async function send(dryRun: boolean) {
     if (!file) return;
@@ -501,12 +502,20 @@ function ImportStep({ onImported }: { onImported: () => void }) {
     setBusy(true);
     try {
       const res = await apiUpload(`/imports/subscribers?dryRun=${dryRun}`, file);
-      setResult(res);
-      if (!dryRun && res.imported > 0) onImported();
+      if (res.jobId) {
+        // La importación corre en segundo plano: se muestra el avance hasta que termine.
+        setProgress(0);
+        const out = await waitForJob<{ imported: number }>(res.jobId, (j) => setProgress(j.progress));
+        setResult({ ...res, imported: out.imported });
+        onImported();
+      } else {
+        setResult(res);
+      }
     } catch (err) {
       setMsg(errMsg(err));
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -525,6 +534,12 @@ function ImportStep({ onImported }: { onImported: () => void }) {
         <button className="btn" type="button" onClick={() => send(true)} disabled={!file || busy}>Revisar archivo</button>
       </div>
       {msg && <p className="alert alert-danger">{msg}</p>}
+      {progress !== null && (
+        <div className="stack-sm" role="status">
+          <span className="small muted">Importando… {progress}%</span>
+          <progress max={100} value={progress} style={{ width: '100%' }} />
+        </div>
+      )}
       {result && (
         <div className="stack">
           <p style={{ margin: 0 }}>

@@ -104,7 +104,7 @@ export class SetupService {
     }
     const org = await this.prisma.platform.organization.findUniqueOrThrow({ where: { id: this.orgId() } });
     const key = this.storage.orgKey(org.id, 'branding', `logo.${type.ext}`);
-    await this.storage.put(key, file.buffer);
+    await this.storage.put(key, file.buffer, file.mimetype);
     const branding: Branding = { ...(org.branding as Branding), logoKey: key, logoType: file.mimetype };
     await this.prisma.platform.organization.update({ where: { id: org.id }, data: { branding: branding as Prisma.InputJsonValue } });
     await this.audit.log({ action: 'setup.logo', entity: 'organization', entityId: org.id, data: { bytes: file.size } });

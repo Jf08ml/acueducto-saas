@@ -156,6 +156,23 @@ Se configuran en *Configuración → Cobro* (`collectionSettings` de la organiza
 - El remitente visible es el nombre del acueducto (con la dirección de `MAIL_FROM`) y la respuesta va al correo de contacto del acueducto.
 - Si el proveedor falla, la operación no se rompe: se registra el error y la UI ofrece el enlace para compartirlo por WhatsApp.
 
+### Tareas en segundo plano
+
+- **BullMQ sobre Redis** (`JobsModule`): reintentos con espera creciente, tareas programadas (cron, hora de Colombia) y avance visible.
+  - El worker corre en el proceso de la API (`WORKER_ENABLED=true`) o en uno aparte.
+  - En pruebas, o con `QUEUE_DRIVER=inline`, la tarea corre en el acto y no hace falta Redis.
+- Un módulo registra su tarea en `onModuleInit` con `jobs.register(tipo, handler)` y la encola con `jobs.enqueue(tipo, datos)`.
+- **Aislamiento:** cada tarea corre con el tenant de quien la encoló (RLS igual que en una petición). Sin tenant, no ve datos de ningún acueducto.
+- El estado, el avance y el resultado quedan en `platform.background_jobs`. La web lo sigue con `GET /jobs/:id` (`waitForJob`), solo dentro del mismo acueducto.
+- Si una tarea falla, el usuario ve el mensaje solo si el error es intencional (`HttpException`); los detalles internos quedan en el log.
+- Hoy corre como tarea la **importación desde Excel**: la revisión es inmediata y la importación se hace en segundo plano, todo o nada en una transacción.
+
+### Archivos
+
+- `STORAGE_DRIVER=local` (carpeta `STORAGE_DIR`) para desarrollo, o `s3` para producción: Amazon S3 o compatible (Cloudflare R2, MinIO, Spaces) con `S3_ENDPOINT`.
+- El bucket debe ser **privado** y los objetos se cifran (SSE). Los archivos siempre se sirven a través de la API, que revisa permisos.
+- Las claves empiezan por `orgs/{organizationId}/` o `platform/` y nunca se arman con texto del usuario.
+
 ### Sesiones y contraseñas
 
 - **Sesión en cookie httpOnly** (`am_sid`): el JavaScript de la página no la puede leer. La BD (`platform.sessions`) guarda solo el hash del token.
