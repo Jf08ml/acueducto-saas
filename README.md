@@ -31,6 +31,26 @@ pnpm dev                                   # API :4000 · Web :3000
 - Superadmin de desarrollo: `admin@aguamata.local` / `Admin12345!`
 - Registrar un acueducto: http://localhost:3000/registro
 
+## Datos de demostración
+
+Simulan cuatro meses de operación (julio a octubre de 2026) en un acueducto ya registrado. Se cargan por la API real, así que facturas, subsidios, intereses, abonos y cartera salen calculados como en el uso normal.
+
+```bash
+pnpm db:demo                       # carga la demo en "agua-mata" (con pnpm dev corriendo)
+pnpm db:demo -- --reset            # la borra y deja el acueducto como estaba
+pnpm db:demo -- --org=<slug>       # en otro acueducto
+```
+
+- **Incluye:**
+  - Una tarifa con subsidios y contribuciones, y la configuración de cobro: intereses de mora, reconexión y lista de suspensión.
+  - 22 suscriptores con medidor (dos sin medidor, facturados por aforo) y cuatro facturaciones.
+  - Pagos puntuales, tardíos, abonos parciales y morosos, y un pago anulado.
+  - Cargos adicionales, una suspensión, una reconexión con su cargo y anomalías de lectura (fuga, consumo cero, predio cerrado, medidor dañado).
+  - Obligaciones con avance y un equipo de demostración.
+- **Usuarios de la demo** (contraseña `Demo12345!`): `laura.gomez@demo.aguamata.co` (administradora) y `carlos.ruiz@demo.aguamata.co` (operador).
+- **Cómo se reconoce:** los suscriptores usan los códigos 0101 a 0199 y los usuarios, correos `@demo.aguamata.co`.
+- **Qué borra `--reset`:** toda la facturación, el recaudo, las lecturas y los medidores del acueducto, y los suscriptores y usuarios de la demo. Restaura la tarifa anterior. La bitácora de auditoría no se borra.
+
 ## Pruebas
 
 ```bash
