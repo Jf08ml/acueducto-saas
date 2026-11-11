@@ -33,7 +33,8 @@ pnpm dev                                   # API :4000 · Web :3000
 
 ## Despliegue
 
-Ver [docs/despliegue.md](docs/despliegue.md): piezas, pasos, DNS y HTTPS, todas las variables de entorno y la lista de verificación.
+- **VPS con Docker:** [deploy/README.md](deploy/README.md). Imágenes de la API y la web, PostgreSQL, Redis, Caddy (HTTPS automático, también para subdominios y dominios propios), respaldos diarios y `deploy.sh`.
+- **Referencia:** [docs/despliegue.md](docs/despliegue.md). Piezas, DNS y HTTPS, todas las variables de entorno y la lista de verificación.
 Con `NODE_ENV=production`, la API no arranca si falta configuración crítica, y la web no compila sin sus variables.
 
 ## Datos de demostración

@@ -1,0 +1,153 @@
+# Producción en un VPS: PostgreSQL, Redis, API, web, Caddy (HTTPS automático) y respaldos diarios.
+# Uso (desde esta carpeta, con deploy/.env completo): ./deploy.sh   — ver deploy/README.md
+name: aguamata
+
+x-api-env: &api-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://aguamata_app:${AGUAMATA_APP_PASSWORD}@postgres:5432/aguamata?schema=public
+  DIRECT_DATABASE_URL: postgresql://aguamata_owner:${AGUAMATA_OWNER_PASSWORD}@postgres:5432/aguamata?schema=public
+  REDIS_URL: redis://redis:6379
+  PLATFORM_WEB_ORIGIN: https://${PLATFORM_DOMAIN}
+  API_PUBLIC_URL: https://${PLATFORM_DOMAIN}
+  APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
+  COOKIE_SECURE: "true"
+  TRUST_PROXY: uniquelocal
+  MAIL_PROVIDER: ${MAIL_PROVIDER}
+  MAIL_FROM: ${MAIL_FROM}
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  SES_CONFIGURATION_SET: ${SES_CONFIGURATION_SET:-}
+  SMTP_URL: ${SMTP_URL:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  SMTP_SECURE: ${SMTP_SECURE:-}
+  STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+  STORAGE_DIR: /data/storage
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_REGION: ${S3_REGION:-}
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+  MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+  MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en deploy/.env}
+      POSTGRES_DB: aguamata
+      # Los usa el script de inicio para crear los roles de la aplicación (solo la primera vez).
+      AGUAMATA_OWNER_PASSWORD: ${AGUAMATA_OWNER_PASSWORD:?Falta AGUAMATA_OWNER_PASSWORD}
+      AGUAMATA_APP_PASSWORD: ${AGUAMATA_APP_PASSWORD:?Falta AGUAMATA_APP_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/10-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+      - ../infra/postgres/production-roles.sql:/opt/aguamata/production-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aguamata"]
+      interval: 5s
+      retries: 20
+    # Sin puertos publicados: solo la red interna llega a la base.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  # Tarea única: aplica las migraciones pendientes (deploy.sh la corre antes de levantar la API).
+  migrate:
+    build: { context: .., dockerfile: apps/api/Dockerfile }
+    image: aguamata-api:latest
+    environment: *api-env
+    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    profiles: ["tools"]
+
+  # Tarea única: plan, catálogo regulatorio y superadmin (la primera vez).
+  seed:
+    image: aguamata-api:latest
+    environment:
+      <<: *api-env
+      SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-}
+      SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-}
+    command: ["node_modules/.bin/tsx", "prisma/seed.ts"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    profiles: ["tools"]
+
+  api:
+    image: aguamata-api:latest
+    restart: unless-stopped
+    environment: *api-env
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_PLATFORM_ORIGIN: https://${PLATFORM_DOMAIN:?Falta PLATFORM_DOMAIN en deploy/.env}
+        API_INTERNAL_URL: http://api:4000
+    image: aguamata-web:latest
+    restart: unless-stopped
+    depends_on:
+      api: { condition: service_healthy }
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Falta ACME_EMAIL en deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - web
+      - api
+
+  # Respaldo diario de la base (pg_dump comprimido). Guarda BACKUP_RETENTION_DAYS días en deploy/backups.
+  # Copia esa carpeta fuera del servidor (ver README): un respaldo en el mismo disco no protege de perderlo.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: aguamata
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+      - ./postgres/backup.sh:/usr/local/bin/backup.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup.sh"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  redisdata:
+  storage:
+  caddydata:
+  caddyconfig:

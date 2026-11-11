@@ -1,0 +1,46 @@
+# HTTPS automático (Let's Encrypt) para:
+#  - la plataforma ({$PLATFORM_DOMAIN} y www),
+#  - el subdominio de cada acueducto ({slug}.{$PLATFORM_DOMAIN}),
+#  - los dominios propios verificados de los acueductos.
+# Subdominios y dominios propios usan TLS bajo demanda: antes de pedir un certificado, Caddy pregunta a la API
+# si ese host existe (tls-ask). Así no se emiten certificados para dominios ajenos.
+
+{
+	email {$ACME_EMAIL}
+	on_demand_tls {
+		ask http://api:4000/api/v1/public/tls-ask
+	}
+}
+
+(aguamata) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	# La API se sirve en la misma dirección (/api/v1): la cookie de sesión queda en el host del acueducto.
+	handle /api/v1/* {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
+
+www.{$PLATFORM_DOMAIN} {
+	redir https://{$PLATFORM_DOMAIN}{uri} permanent
+}
+
+{$PLATFORM_DOMAIN} {
+	import aguamata
+}
+
+# Cualquier otro host (subdominios de acueductos y dominios propios), con certificado bajo demanda.
+https:// {
+	tls {
+		on_demand
+	}
+	import aguamata
+}

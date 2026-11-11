@@ -1,6 +1,6 @@
 # Despliegue en producción
 
-Guía para publicar AguaMata. La API revisa su configuración al arrancar: en producción (`NODE_ENV=production`), si falta algo crítico **no arranca** y lista lo que falta. La web hace lo mismo al compilar.
+Guía para publicar AguaMata. **Para un VPS con Docker, sigue [deploy/README.md](../deploy/README.md)**: incluye las imágenes, Caddy, los respaldos y un script de despliegue, y ya lo hace todo. Este documento explica las piezas y todas las variables. La API revisa su configuración al arrancar: en producción (`NODE_ENV=production`), si falta algo crítico **no arranca** y lista lo que falta. La web hace lo mismo al compilar.
 
 ## Piezas
 

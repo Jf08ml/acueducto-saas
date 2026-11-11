@@ -1,4 +1,5 @@
-/** @type {import('next').NextConfig} */
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Las tres variables quedan FIJAS al compilar (next build): NEXT_PUBLIC_* se incrustan en el JavaScript del navegador
 // y los rewrites se resuelven en la compilación. Si cambian, hay que volver a compilar.
@@ -14,12 +15,15 @@ if (process.env.NODE_ENV === 'production' && !process.env.NEXT_DIST_DIR) {
   if (/localhost|127\.0\.0\.1/.test(PLATFORM_ORIGIN)) console.warn(`Aviso: NEXT_PUBLIC_PLATFORM_ORIGIN apunta a ${PLATFORM_ORIGIN}`);
 }
 
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   // Permite compilar en otra carpeta (p. ej. NEXT_DIST_DIR=.next-check) sin pisar la de `next dev`.
   distDir: process.env.NEXT_DIST_DIR || '.next',
   // Imagen de Docker liviana: next build genera .next/standalone con lo justo para correr.
   output: process.env.NEXT_OUTPUT === 'standalone' ? 'standalone' : undefined,
+  // Monorepo: el rastreo de archivos parte de la raíz para incluir @agua-mata/shared en la imagen.
+  outputFileTracingRoot: path.join(path.dirname(fileURLToPath(import.meta.url)), '../..'),
   // La web reenvía /api/v1 a la API: el navegador habla con un solo origen, así la cookie de sesión
   // (httpOnly) queda en la dirección del acueducto, sea subdominio o dominio propio.
   async rewrites() {
