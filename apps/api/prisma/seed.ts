@@ -114,6 +114,9 @@ async function main() {
 
   const email = (process.env.SUPERADMIN_EMAIL ?? 'admin@aguamata.local').toLowerCase();
   const password = process.env.SUPERADMIN_PASSWORD ?? 'Admin12345!';
+  if (process.env.NODE_ENV === 'production' && (!process.env.SUPERADMIN_EMAIL || !process.env.SUPERADMIN_PASSWORD || password === 'Admin12345!' || password.length < 12)) {
+    throw new Error('En producción define SUPERADMIN_EMAIL y SUPERADMIN_PASSWORD (mínimo 12 caracteres, distinta a la de desarrollo) antes del seed');
+  }
   await prisma.user.upsert({
     where: { email },
     update: { isPlatformAdmin: true },

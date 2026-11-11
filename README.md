@@ -31,6 +31,11 @@ pnpm dev                                   # API :4000 · Web :3000
 - Superadmin de desarrollo: `admin@aguamata.local` / `Admin12345!`
 - Registrar un acueducto: http://localhost:3000/registro
 
+## Despliegue
+
+Ver [docs/despliegue.md](docs/despliegue.md): piezas, pasos, DNS y HTTPS, todas las variables de entorno y la lista de verificación.
+Con `NODE_ENV=production`, la API no arranca si falta configuración crítica, y la web no compila sin sus variables.
+
 ## Datos de demostración
 
 Simulan cuatro meses de operación (julio a octubre de 2026) en un acueducto ya registrado. Se cargan por la API real, así que facturas, subsidios, intereses, abonos y cartera salen calculados como en el uso normal.

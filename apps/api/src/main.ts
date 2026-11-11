@@ -3,8 +3,11 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DomainsService } from './domains/domains.module';
+import { assertEnv } from './config/env-check';
 
 export async function createApp() {
+  // En producción, una configuración incompleta detiene el arranque con la lista de lo que falta.
+  assertEnv();
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api/v1');
   // La web reenvía /api/v1 a esta API (mismo origen para la cookie de sesión): confiar en X-Forwarded-* del proxy.

@@ -27,12 +27,20 @@ describe('Cola de tareas', () => {
     });
     jobs.register('test.fail', async () => { throw new BadRequestException('Dato inválido para la tarea'); });
     jobs.register('test.crash', async () => { throw new Error('detalle interno'); });
-    const org = await owner.organization.findFirstOrThrow({ select: { id: true } });
+    // Acueducto propio de la prueba (no depende de los datos que haya en la base).
+    const run = Date.now().toString().slice(-8);
+    const org = await owner.organization.create({
+      data: {
+        slug: `jobs-${run}`, name: `Acueducto Jobs ${run}`, legalName: 'Asociación Jobs', nit: `3${run}`, nitDv: 0, department: 'Nariño',
+        municipality: 'Pasto', organizationType: 'comunitario', contactEmail: `jobs-${run}@test.co`, contactPhone: '3000000000',
+      },
+    });
     orgId = org.id;
   });
 
   afterAll(async () => {
     await owner.backgroundJob.deleteMany({ where: { type: { startsWith: 'test.' } } });
+    if (orgId) await owner.organization.delete({ where: { id: orgId } });
     await Promise.all([owner.$disconnect(), app?.close()]);
   });
 
